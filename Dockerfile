@@ -3,12 +3,12 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy csproj and restore first (layer caching)
-COPY RemyEnMarit/RemyEnMarit.csproj RemyEnMarit/
-RUN dotnet restore RemyEnMarit/RemyEnMarit.csproj
+COPY JoseEnLaura/JoseEnLaura.csproj JoseEnLaura/
+RUN dotnet restore JoseEnLaura/JoseEnLaura.csproj
 
 # Copy everything else and publish
 COPY . .
-WORKDIR /src/RemyEnMarit
+WORKDIR /src/JoseEnLaura
 RUN dotnet publish -c Release -o /app/publish
 
 # ── Runtime stage ──
