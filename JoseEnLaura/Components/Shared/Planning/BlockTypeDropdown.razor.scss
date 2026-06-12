@@ -1,0 +1,121 @@
+﻿@use 'variables' as *;
+
+/* Block Type Dropdown */
+.block-type-dropdown-wrap {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.block-type-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: $text-placeholder;
+    transition: all 0.15s;
+    user-select: none;
+
+    &:hover {
+        border-color: $border-input;
+        background: $bg-hover;
+        color: $text-light;
+        transform: scale(1.1);
+    }
+
+    &.type-checked { color: $color-success; }
+    &.type-question { color: $color-warning-dark; font-weight: 700; }
+    &.type-important { color: $color-danger; font-weight: 700; }
+    &.type-heading { color: $text-heading; font-weight: 700; }
+}
+
+.type-dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+}
+
+.type-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    background: $bg-white;
+    border: 1px solid $border;
+    border-radius: $radius;
+    box-shadow: $shadow-md;
+    padding: 4px;
+    min-width: 130px;
+    animation: dropIn 0.1s ease;
+}
+
+@keyframes dropIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.type-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    border: none;
+    background: none;
+    padding: 5px 8px;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    color: $text-body;
+    text-align: left;
+    transition: background 0.1s;
+
+    &:hover {
+        background: $bg-hover;
+    }
+}
+
+.type-icon {
+    width: 18px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: $text-placeholder;
+
+    &-checkbox { color: #64748b; }
+    &-heading { color: $text-heading; font-weight: 700; }
+    &-question { color: $color-warning-dark; font-weight: 700; }
+    &-important { color: $color-danger; font-weight: 700; }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .type-dropdown {
+        position: fixed;
+        top: auto;
+        left: 50%;
+        bottom: 1rem;
+        transform: translateX(-50%);
+        min-width: 160px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+        z-index: 200;
+    }
+
+    .type-option {
+        padding: 8px 10px;
+        font-size: 0.85rem;
+    }
+
+    .type-dropdown-backdrop {
+        background: rgba(0, 0, 0, 0.15);
+        backdrop-filter: blur(1px);
+    }
+}
+

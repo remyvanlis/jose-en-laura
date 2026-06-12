@@ -1,0 +1,941 @@
+@page "/"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject IJSRuntime JS
+@inject ProtectedLocalStorage LocalStorage
+@inject NavigationManager Nav
+@inject IConfiguration Configuration
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>José & Laura — @(_lang == "en" ? $"Wedding {_weddingDate:MMMM d yyyy}" : $"Bruiloft {_weddingDate:d MMMM yyyy}")</PageTitle>
+
+<!-- ===================== LANGUAGE SELECTOR ===================== -->
+<div class="language-selector">
+    <button class="lang-flag @(_lang == "nl" ? "active" : "")" @onclick='() => SetLanguage("nl")' title="Nederlands">
+        <span class="flag-emoji">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="12.5" viewBox="0 0 9 6">
+                <rect fill="#21468B" width="9" height="6"/>
+                <rect fill="#FFF" width="9" height="4"/>
+                <rect fill="#AE1C28" width="9" height="2"/>
+            </svg>
+        </span>
+    </button>
+    <button class="lang-flag @(_lang == "en" ? "active" : "")" @onclick='() => SetLanguage("en")' title="English">
+        <span class="flag-emoji">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 30" width="20" height="12.5">
+                <clipPath id="s"><path d="M0,0 v30 h45 v-30 z"/>
+                </clipPath>
+                <clipPath id="t">
+                    <path d="M22.5,15 h22.5 v15 z v15 h-22.5 z h-22.5 v-15 z v-15 h22.5 z"/>
+                </clipPath>
+                <g clip-path="url(#s)">
+                    <path d="M0,0 v30 h45 v-30 z" fill="#012169"/>
+                    <path d="M0,0 L45,30 M45,0 L0,30" stroke="#fff" stroke-width="6"/>
+                    <path d="M0,0 L45,30 M45,0 L0,30" clip-path="url(#t)" stroke="#C8102E" stroke-width="4"/>
+                    <path d="M22.5,0 v30 M0,15 h45" stroke="#fff" stroke-width="10"/>
+                    <path d="M22.5,0 v30 M0,15 h45" stroke="#C8102E" stroke-width="6"/>
+                </g>
+            </svg>
+        </span>
+    </button>
+</div>
+
+<!-- ===================== HERO SECTION ===================== -->
+<section class="hero-section" style="@(_imageSlots.ContainsKey("hero-bg") ? $"background-image: url('/api/site-image/hero-bg?v={_imageSlots["hero-bg"]}');" : "")">
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+        <p class="hero-pre">@T("hero.pre")</p>
+        <h1 class="hero-title">@T("hero.title")</h1>
+        <div class="hero-divider">
+            <span class="divider-leaf">&#127800;</span>
+        </div>
+        <p class="hero-date">@T("hero.date")</p>
+        <p class="hero-countdown">@_countdownText</p>
+    </div>
+    <a class="hero-scroll-hint" href="#rsvp">
+        <span>&#8595;</span>
+    </a>
+</section>
+
+<!-- ===================== RSVP SECTION ===================== -->
+<section class="rsvp-section" id="rsvp">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("rsvp.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <p class="rsvp-subtitle">@T("rsvp.subtitle")</p>
+
+        @if (_submitted)
+        {
+            <div class="rsvp-success">
+                <div class="success-icon">&#10003;</div>
+                <h3>@(_lang == "en" ? "Thank you" : "Bedankt"), @(_selectedGuest?.FullName ?? (_lang == "en" ? "unknown guest" : "onbekende gast"))!</h3>
+                @if (_savedAttendingCeremony || _savedAttendingEvening)
+                {
+                    <p>@T("rsvp.success.attending")</p>
+                }
+                else
+                {
+                    <p>@T("rsvp.success.notattending")</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="rsvp-form">
+                <!-- Name autocomplete -->
+                <div class="form-group">
+                    <label>@(_lang == "en" ? "Your name" : "Jouw naam")</label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text"
+                               class="form-input"
+                               placeholder="@(_lang == "en" ? "Start typing your full name..." : "Begin met typen (voor- en achternaam)...")"
+                               @bind="_searchText"
+                               @bind:event="oninput"
+                               @bind:after="OnSearchChanged"
+                               @onfocus="() => _showSuggestions = _filteredGuests.Count > 0"
+                               autocomplete="off" />
+                        @if (_showSuggestions && _filteredGuests.Count > 0)
+                        {
+                            <div class="autocomplete-dropdown" @onmousedown:preventDefault>
+                                <div class="autocomplete-hint">
+                                    ?? @(_lang == "en" ? "Tap your name below to select it" : "Tik hieronder op je naam om deze te selecteren")
+                                </div>
+                                @foreach (var guest in _filteredGuests)
+                                {
+                                    <div class="autocomplete-item" @onmousedown="() => SelectGuest(guest)">
+                                        <span class="autocomplete-name">@guest.FullName</span>
+                                        <span class="autocomplete-badge badge-@guest.InvitedFor.ToString().ToLower()">
+                                            @FormatInvitedFor(guest.InvitedFor)
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (_searchText.Trim().Length >= 2 && HasSpaceAndLastNameStart(_searchText) && _filteredGuests.Count == 0 && _selectedGuest is null)
+                        {
+                            <div class="autocomplete-dropdown">
+                                <div class="autocomplete-empty">@(_lang == "en" ? "No guest found with this name" : "Geen gast gevonden met deze naam")</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (_selectedGuest is not null)
+                {
+                    <div class="guest-selected-card">
+                        <div class="guest-selected-info">
+                            <strong>@_selectedGuest.FullName</strong>
+                            <span class="badge badge-@_selectedGuest.InvitedFor.ToString().ToLower()">@FormatInvitedFor(_selectedGuest.InvitedFor)</span>
+                        </div>
+                        <button class="btn-small btn-outline" @onclick="ClearGuest">@(_lang == "en" ? "Change" : "Wijzig")</button>
+                    </div>
+
+                    @if (_existingAttendance is not null)
+                    {
+                        <div class="admin-success" style="margin-bottom: 1.5rem;">
+                            &#9989; @(_lang == "en" ? "You have already submitted an RSVP. You can update your answer below." : "Je hebt al eerder een RSVP ingestuurd. Je kunt je antwoord hieronder aanpassen.")
+                        </div>
+                    }
+
+                    <!-- Attendance options based on invitation type -->
+                    <div class="form-group attendance-options">
+                        <label>@(_lang == "en" ? "Which parts will you attend?" : "Waarbij ben je aanwezig?")</label>
+                        <p class="attendance-hint">@(_lang == "en" ? "Tap a card to toggle between attending and not attending" : "Tik op een kaart om te wisselen tussen aanwezig en niet aanwezig")</p>
+                        <div class="checkbox-group">
+                            @if (_selectedGuest.InvitedFor is InvitedForType.Ceremony or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest)
+                            {
+                                <label class="checkbox-card @(_attendingCeremony ? "selected attending" : "not-attending")">
+                                    <input type="checkbox" @bind="_attendingCeremony" />
+                                    <span class="checkbox-icon">&#9962;</span>
+                                    <span class="checkbox-event-name">@(_lang == "en" ? "Ceremony" : "Ceremonie")</span>
+                                    <small>14:00</small>
+                                    <span class="attendance-status">
+                                        @if (_attendingCeremony)
+                                        {
+                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                        }
+                                    </span>
+                                </label>
+                            }
+                            @if (_selectedGuest.InvitedFor is InvitedForType.DayGuest)
+                            {
+                                <label class="checkbox-card @(_attendingDinner ? "selected attending" : "not-attending")">
+                                    <input type="checkbox" @bind="_attendingDinner" />
+                                    <span class="checkbox-icon">&#127869;</span>
+                                    <span class="checkbox-event-name">Diner</span>
+                                    <small>17:30</small>
+                                    <span class="attendance-status">
+                                        @if (_attendingDinner)
+                                        {
+                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                        }
+                                    </span>
+                                </label>
+                            }
+                            else if (_selectedGuest.InvitedFor is InvitedForType.CeremonyAndEvening)
+                            {
+                                <label class="checkbox-card not-attending disabled-card">
+                                    <span class="checkbox-icon">&#127869;</span>
+                                    <span class="checkbox-event-name">Diner</span>
+                                    <small>17:30</small>
+                                    <span class="attendance-status">
+                                        <span class="status-badge status-disabled">@(_lang == "en" ? "N/A" : "N.V.T.")</span>
+                                    </span>
+                                </label>
+                            }
+                            @if (_selectedGuest.InvitedFor is InvitedForType.Evening or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest)
+                            {
+                                <label class="checkbox-card @(_attendingEvening ? "selected attending" : "not-attending")">
+                                    <input type="checkbox" @bind="_attendingEvening" />
+                                    <span class="checkbox-icon">&#127878;</span>
+                                    <span class="checkbox-event-name">@(_lang == "en" ? "Evening Party" : "Avondfeest")</span>
+                                    <small>20:00</small>
+                                    <span class="attendance-status">
+                                        @if (_attendingEvening)
+                                        {
+                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                        }
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        @if (_selectedGuest.InvitedFor is InvitedForType.DayGuest)
+                        {
+                            <label>@(_lang == "en" ? "Dietary requirements or allergies" : "Dieetwensen of allergieën")</label>
+                            <textarea class="form-input form-textarea" rows="2" @bind="_dietaryNotes" placeholder="@(_lang == "en" ? "E.g. vegetarian, gluten-free..." : "Bijv. vegetarisch, glutenvrij...")"></textarea>
+                        }
+                        else
+                        {
+                            <label>@(_lang == "en" ? "Allergies (for the reception)" : "Allergieën (voor de receptie)")</label>
+                            <textarea class="form-input form-textarea" rows="2" @bind="_dietaryNotes" placeholder="@(_lang == "en" ? "E.g. nuts, lactose..." : "Bijv. noten, lactose...")"></textarea>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label>@(_lang == "en" ? "Message (optional)" : "Bericht (optioneel)")</label>
+                        <textarea class="form-input form-textarea" rows="2" @bind="_message" placeholder="@(_lang == "en" ? "A kind word for the couple..." : "Een lief woordje voor het bruidspaar...")"></textarea>
+                    </div>
+
+                    <!-- Play / Act section (only for evening guests) -->
+                    @if (_selectedGuest.InvitedFor is InvitedForType.Evening or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest)
+                    {
+                        <div class="play-section">
+                            <div class="play-header">
+                                <label class="checkbox-card play-toggle @(_wantsPlay ? "selected" : "")" style="max-width: 100%; flex-direction: row; gap: 0.8rem; justify-content: center;">
+                                    <input type="checkbox" @bind="_wantsPlay" />
+                                    <span class="checkbox-icon">&#128299;</span>
+                                    <span>@(_lang == "en" ? "I want to do an act or game at the evening party!" : "Ik wil een act of spelletje doen op het avondfeest!")</span>
+                                </label>
+                            </div>
+                            @if (_wantsPlay)
+                            {
+                                <div class="play-fields attendance-options">
+                                    <div class="form-group">
+                                        <label>@(_lang == "en" ? "Estimated duration (minutes)" : "Geschatte duur (minuten)")</label>
+                                        <input type="number" class="form-input" min="1" max="60" @bind="_playDuration" placeholder="@(_lang == "en" ? "E.g. 10" : "Bijv. 10")" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-card @(_playNeedsBeamer ? "selected" : "")" style="max-width: 100%; flex-direction: row; gap: 0.8rem; justify-content: center;">
+                                            <input type="checkbox" @bind="_playNeedsBeamer" />
+                                            <span class="checkbox-icon">&#128253;</span>
+                                            <span>@(_lang == "en" ? "I need a projector" : "Ik heb een beamer nodig")</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>@(_lang == "en" ? "Other requirements" : "Overige benodigdheden")</label>
+                                        <textarea class="form-input form-textarea" rows="2" @bind="_playRequirements" placeholder="@(_lang == "en" ? "E.g. chairs, tables, sound system..." : "Bijv. stoelen, tafels, muziekinstallatie...")"></textarea>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_saveError))
+                    {
+                        <div class="admin-error" style="margin-bottom: 1rem;">@_saveError</div>
+                    }
+
+                    <button class="btn-rsvp" @onclick="SaveAttendance">
+                        &#128140; @(_lang == "en" ? "Submit!" : "Versturen!")
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+<!-- ===================== RSVP HELP ===================== -->
+<section class="rsvp-help-section">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("help.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <p class="rsvp-help-subtitle">@T("help.subtitle")</p>
+        <div class="contact-cards">
+            @foreach (var contact in _contactInfos)
+            {
+                <div class="contact-card">
+                    <div class="contact-name">@contact.Name</div>
+                    <a class="contact-link" href="@ToTelLink(contact.Phone)">Tel: @contact.Phone</a>
+                    <a class="contact-link" href="mailto:@contact.Email">@contact.Email</a>
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- ===================== FAQ ===================== -->
+<section class="faq-section">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("faq.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <div class="faq-list">
+            @foreach (var item in _dbFaqItems)
+            {
+                <details class="faq-item">
+                    <summary>@(_lang == "en" && !string.IsNullOrWhiteSpace(item.QuestionEn) ? item.QuestionEn : item.Question)</summary>
+                    <div class="faq-answer">
+                        @{ var faqAnswer = _lang == "en" && !string.IsNullOrWhiteSpace(item.AnswerEn) ? item.AnswerEn : item.Answer; }
+                        @foreach (var line in faqAnswer.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <p>@line</p>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- ===================== DRESS CODE ===================== -->
+<section class="dresscode-section">
+    <div class="container-narrow">
+        <h2 class="section-title" style="color: var(--color-warm-brown);">@T("dresscode.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <p class="dresscode-subtitle">@T("dresscode.subtitle")</p>
+        <div class="dresscode-cloud">
+            <div class="dresscode-colors">
+                @foreach (var color in _dressCodeColors)
+                {
+                    var label = _lang == "en" && !string.IsNullOrWhiteSpace(color.NameEn) ? color.NameEn : color.NameNl;
+                    <div class="dresscode-swatch" style="background-color: @color.Hex;" title="@label">
+                        <span class="swatch-label">@label</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== PHOTO STRIP ===================== -->
+<section class="photo-strip">
+    <div class="photo-strip-inner">
+        <div class="photo-card">
+            <img src="@(_imageSlots.ContainsKey("photo-strip-1") ? $"/api/site-image/photo-strip-1?v={_imageSlots["photo-strip-1"]}" : "minis/IMG_6047.jpg")" alt="Foto 1"/>
+        </div>
+        <div class="photo-card">
+            <img src="@(_imageSlots.ContainsKey("photo-strip-2") ? $"/api/site-image/photo-strip-2?v={_imageSlots["photo-strip-2"]}" : "minis/IMG_6245.jpg")" alt="Foto 2"/>
+        </div>
+        <div class="photo-card">
+            <img src="@(_imageSlots.ContainsKey("photo-strip-3") ? $"/api/site-image/photo-strip-3?v={_imageSlots["photo-strip-3"]}" : "minis/IMG_6269.jpg")" alt="Foto 3"/>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== OUR STORY / INTRO ===================== -->
+<section class="story-section">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("story.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <p class="story-text">
+            @T("story.text")
+        </p>
+    </div>
+</section>
+
+<!-- ===================== FULL-WIDTH PHOTO ===================== -->
+<section class="full-photo-section">
+    <img src="@(_imageSlots.ContainsKey("full-photo") ? $"/api/site-image/full-photo?v={_imageSlots["full-photo"]}" : "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=1600&h=600&fit=crop")" alt="Bruiloft sfeer"/>
+    <div class="full-photo-overlay"></div>
+    <div class="full-photo-text">
+        <p>@T("fullphoto.quote")</p>
+    </div>
+</section>
+
+<!-- ===================== PLANNING / TIMELINE ===================== -->
+<section class="planning-section" id="planning">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("planning.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <p class="planning-subtitle">@T("planning.subtitle")</p>
+
+        <div class="timeline">
+            @foreach (var item in _scheduleItems.Where(s => s.ParentId == null).OrderBy(s => s.SortOrder))
+            {
+                <div class="timeline-item">
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-time">@item.Time</div>
+                    <div class="timeline-event">
+                        <h4>@(_lang == "en" && !string.IsNullOrWhiteSpace(item.TitleEn) ? item.TitleEn : item.Title)</h4>
+                        @{
+                            var topDesc = _lang == "en" && !string.IsNullOrWhiteSpace(item.DescriptionEn) ? item.DescriptionEn : item.Description;
+                        }
+                        @if (!string.IsNullOrEmpty(topDesc))
+                        {
+                            <p>@topDesc</p>
+                        }
+                        @(RenderChildren(item))
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- ===================== LOCATION ===================== -->
+<section class="location-section">
+    <div class="container-narrow">
+        <h2 class="section-title">@T("location.title")</h2>
+        <div class="section-ornament">&#10047;</div>
+        <div class="location-cards">
+            @foreach (var loc in _locations)
+            {
+                <div class="location-card">
+                    <div class="location-icon">@((MarkupString)loc.Icon)</div>
+                    <h3>@(_lang == "en" && !string.IsNullOrWhiteSpace(loc.TitleEn) ? loc.TitleEn : loc.Title)</h3>
+                    <p class="location-name">@loc.VenueName</p>
+                    <p class="location-address">
+                        @loc.AddressLine1
+                        @if (!string.IsNullOrWhiteSpace(loc.AddressLine2))
+                        {
+                            <br />@loc.AddressLine2
+                        }
+                    </p>
+                    @if (!string.IsNullOrWhiteSpace(loc.Phone))
+                    {
+                        <a class="location-phone" href="tel:@(new string(loc.Phone.Where(char.IsDigit).ToArray()))">Tel: @loc.Phone</a>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="wedding-footer">
+    <div class="footer-leaf">&#127800;</div>
+    <p class="footer-names">@T("footer.names")</p>
+    <p class="footer-date">@T("footer.date")</p>
+</footer>
+
+
+@code {
+    // ========================
+    //   ACCESS
+    // ========================
+    private const string AccessKey = "wedding_access_code";
+    private const string LangKey = "wedding_lang";
+    private string _expectedAccessCode = "";
+    private bool _accessChecked;
+
+    // ========================
+    //   LANGUAGE
+    // ========================
+    private string _lang = "nl";
+
+    // ========================
+    //   PROGRAMMA (from DB)
+    // ========================
+    private List<JoseEnLaura.Data.Models.ScheduleItem> _scheduleItems = [];
+
+    // ========================
+    //   COUNTDOWN
+    // ========================
+    private string _countdownText = "";
+
+    // ========================
+    //   RSVP
+    // ========================
+    private List<Guest> _allGuests = [];
+    private List<Guest> _filteredGuests = [];
+    private string _searchText = "";
+    private bool _showSuggestions;
+    private Guest? _selectedGuest;
+    private Attendance? _existingAttendance;
+
+    private bool _attendingCeremony;
+    private bool _attendingDinner;
+    private bool _attendingEvening;
+    private string _dietaryNotes = "";
+    private string _message = "";
+
+    // Play
+    private bool _wantsPlay;
+    private int _playDuration = 10;
+    private bool _playNeedsBeamer;
+    private string _playRequirements = "";
+
+    private bool _submitted;
+    private bool _savedAttendingCeremony;
+    private bool _savedAttendingEvening;
+    private string _saveError = "";
+
+    // ========================
+    //   CONTACTS (from DB)
+    // ========================
+    private List<JoseEnLaura.Data.Models.ContactInfo> _contactInfos = [];
+
+    // ========================
+    //   LOCATIONS (from DB)
+    // ========================
+    private List<JoseEnLaura.Data.Models.WeddingLocation> _locations = [];
+
+    // ========================
+    //   SITE TEXTS & FAQ (from DB)
+    // ========================
+    private Dictionary<string, SiteText> _siteTextsDict = new();
+    private List<JoseEnLaura.Data.Models.FaqItem> _dbFaqItems = [];
+
+    // ========================
+    //   SITE IMAGES (from DB)
+    // ========================
+    private Dictionary<string, string> _imageSlots = new(); // slot -> id (for cache busting)
+    private List<JoseEnLaura.Data.Models.DressCodeColor> _dressCodeColors = [];
+    private DateTime _weddingDate = new(2026, 10, 17);
+
+    private string T(string key)
+    {
+        if (!_siteTextsDict.TryGetValue(key, out var st)) return key;
+        if (_lang == "en" && !string.IsNullOrWhiteSpace(st.ValueEn)) return st.ValueEn;
+        return st.Value;
+    }
+
+    private async Task SetLanguage(string lang)
+    {
+        _lang = lang;
+        try { await LocalStorage.SetAsync(LangKey, lang); } catch { }
+        UpdateCountdown();
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _expectedAccessCode = Configuration["Access:Code"] ?? "";
+
+        UpdateCountdown();
+
+        // Load guests
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _allGuests = await db.Guests
+            .Include(g => g.Attendance)
+            .ThenInclude(a => a!.Play)
+            .OrderBy(g => g.FullName)
+            .ToListAsync();
+
+        // Load site texts (full objects for bilingual support)
+        var siteTexts = await db.SiteTexts.ToListAsync();
+        _siteTextsDict = siteTexts.ToDictionary(t => t.Key, t => t);
+
+        // Load FAQ items
+        _dbFaqItems = await db.FaqItems.OrderBy(f => f.SortOrder).ToListAsync();
+
+        // Load schedule items (with children)
+        _scheduleItems = await db.ScheduleItems
+            .Include(s => s.Children)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+
+        // Load contact infos
+        _contactInfos = await db.ContactInfos.OrderBy(c => c.SortOrder).ToListAsync();
+
+        // Load location cards
+        _locations = await db.WeddingLocations.OrderBy(l => l.SortOrder).ToListAsync();
+
+        // Load site image slots (just slot + id, no data)
+        _imageSlots = await db.SiteImages.ToDictionaryAsync(i => i.Slot, i => i.Id.ToString());
+
+        // Load dress-code colours
+        _dressCodeColors = await db.DressCodeColors.OrderBy(c => c.SortOrder).ToListAsync();
+
+        // Parse the configurable wedding date for the countdown
+        if (_siteTextsDict.TryGetValue("wedding.date", out var weddingDateText)
+            && DateTime.TryParse(weddingDateText.Value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedWeddingDate))
+        {
+            _weddingDate = parsedWeddingDate;
+        }
+        UpdateCountdown();
+    }
+
+    private void UpdateCountdown()
+    {
+        var weddingDate = _weddingDate;
+        var today = DateTime.Today;
+        var diff = weddingDate - today;
+
+        if (diff.TotalDays > 0)
+            _countdownText = _lang == "en" ? $"Only {(int)diff.TotalDays} days to go!" : $"Nog {(int)diff.TotalDays} dagen te gaan!";
+        else if (diff.TotalDays == 0)
+            _countdownText = _lang == "en" ? "Today is the big day! ??" : "Vandaag is de grote dag! ??";
+        else
+            _countdownText = _lang == "en" ? "What a beautiful day it was!" : "Wat een prachtige dag was het!";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Load language preference
+        try
+        {
+            var langResult = await LocalStorage.GetAsync<string>(LangKey);
+            if (langResult is { Success: true, Value: not null })
+            {
+                _lang = langResult.Value;
+                UpdateCountdown();
+                StateHasChanged();
+            }
+        }
+        catch { }
+
+        if (_accessChecked) return;
+        _accessChecked = true;
+
+        if (string.IsNullOrWhiteSpace(_expectedAccessCode))
+        {
+            return;
+        }
+
+        ProtectedBrowserStorageResult<string> result = new();
+        try
+        {
+            result = await LocalStorage.GetAsync<string>(AccessKey);
+        }
+        catch (Exception _)
+        {
+            Nav.NavigateTo("/access", forceLoad: true);
+        }
+        
+        if (!(result is { Success: true, Value: not null } &&
+              string.Equals(result.Value, _expectedAccessCode, StringComparison.OrdinalIgnoreCase)))
+        {
+            Nav.NavigateTo("/access", forceLoad: true);
+            return;
+        }
+
+        // Log this visit (fire-and-forget)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                db.VisitorLogs.Add(new VisitorLog { VisitedAt = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            catch { /* visitor log failure should not affect the user experience */ }
+        });
+    }
+
+    /// <summary>
+    /// Returns true if the text contains a space followed by at least one character (i.e. start of last name).
+    /// </summary>
+    private static bool HasSpaceAndLastNameStart(string text)
+    {
+        var trimmed = text.Trim();
+        var spaceIdx = trimmed.IndexOf(' ');
+        return spaceIdx >= 1 && spaceIdx < trimmed.Length - 1;
+    }
+
+    private void OnSearchChanged()
+    {
+        // Use a trimmed copy for matching logic, but keep _searchText as-is so the user can type spaces
+        var trimmedSearch = _searchText.Trim();
+
+        // Don't reset if the text matches the already-selected guest
+        if (_selectedGuest is not null &&
+            string.Equals(trimmedSearch, _selectedGuest.FullName, StringComparison.OrdinalIgnoreCase))
+        {
+            _showSuggestions = false;
+            _filteredGuests = [];
+            return;
+        }
+
+        _selectedGuest = null;
+        _existingAttendance = null;
+
+        // Only search once there's a space + start of last name (e.g. "Jan V")
+        if (string.IsNullOrWhiteSpace(trimmedSearch) || trimmedSearch.Length < 2 || !HasSpaceAndLastNameStart(trimmedSearch))
+        {
+            _filteredGuests = [];
+            _showSuggestions = false;
+            return;
+        }
+
+        _filteredGuests = _allGuests
+            .Where(g => g.FullName.Contains(trimmedSearch, StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        // Auto-select if there's exactly one result that matches the full name exactly
+        if (_filteredGuests.Count == 1 &&
+            string.Equals(_filteredGuests[0].FullName, trimmedSearch, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectGuest(_filteredGuests[0]);
+            return;
+        }
+
+        _showSuggestions = true;
+    }
+
+    private void SelectGuest(Guest guest)
+    {
+        _selectedGuest = guest;
+        _searchText = guest.FullName;
+        _showSuggestions = false;
+        _filteredGuests = [];
+
+        // Pre-fill if existing attendance
+        if (guest.Attendance is not null)
+        {
+            _existingAttendance = guest.Attendance;
+            _attendingCeremony = guest.Attendance.AttendingCeremony;
+            _attendingDinner = guest.Attendance.AttendingDinner;
+            _attendingEvening = guest.Attendance.AttendingEvening;
+            _dietaryNotes = guest.Attendance.DietaryNotes ?? "";
+            _message = guest.Attendance.Message ?? "";
+
+            if (guest.Attendance.Play is not null)
+            {
+                _wantsPlay = true;
+                _playDuration = guest.Attendance.Play.DurationMinutes;
+                _playNeedsBeamer = guest.Attendance.Play.NeedsBeamer;
+                _playRequirements = guest.Attendance.Play.Requirements ?? "";
+            }
+            else
+            {
+                ResetPlayFields();
+            }
+        }
+        else
+        {
+            _existingAttendance = null;
+            _attendingCeremony = guest.InvitedFor is InvitedForType.Ceremony or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest;
+            _attendingDinner = guest.InvitedFor is InvitedForType.DayGuest;
+            _attendingEvening = guest.InvitedFor is InvitedForType.Evening or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest;
+            _dietaryNotes = "";
+            _message = "";
+            ResetPlayFields();
+        }
+    }
+
+    private void ResetPlayFields()
+    {
+        _wantsPlay = false;
+        _playDuration = 10;
+        _playNeedsBeamer = false;
+        _playRequirements = "";
+    }
+
+    private void ClearGuest()
+    {
+        _selectedGuest = null;
+        _existingAttendance = null;
+        _searchText = "";
+        _filteredGuests = [];
+        _showSuggestions = false;
+    }
+
+    private async Task SaveAttendance()
+    {
+        _saveError = "";
+        if (_selectedGuest is null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var guest = await db.Guests
+            .Include(g => g.Attendance)
+            .ThenInclude(a => a!.Play)
+            .FirstOrDefaultAsync(g => g.Id == _selectedGuest.Id);
+
+        if (guest is null)
+        {
+            _saveError = _lang == "en" ? "Guest not found." : "Gast niet gevonden.";
+            return;
+        }
+
+        if (guest.Attendance is null)
+        {
+            var attendance = new Attendance
+            {
+                GuestId = guest.Id,
+                AttendingCeremony = _attendingCeremony,
+                AttendingDinner = _attendingDinner,
+                AttendingEvening = _attendingEvening,
+                DietaryNotes = string.IsNullOrWhiteSpace(_dietaryNotes) ? null : _dietaryNotes.Trim(),
+                Message = string.IsNullOrWhiteSpace(_message) ? null : _message.Trim(),
+                SubmittedAt = DateTime.UtcNow
+            };
+            db.Attendances.Add(attendance);
+            await db.SaveChangesAsync();
+
+            if (_wantsPlay && _attendingEvening)
+            {
+                db.Plays.Add(new Play
+                {
+                    AttendanceId = attendance.Id,
+                    DurationMinutes = _playDuration,
+                    NeedsBeamer = _playNeedsBeamer,
+                    Requirements = string.IsNullOrWhiteSpace(_playRequirements) ? null : _playRequirements.Trim()
+                });
+                await db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            guest.Attendance.AttendingCeremony = _attendingCeremony;
+            guest.Attendance.AttendingDinner = _attendingDinner;
+            guest.Attendance.AttendingEvening = _attendingEvening;
+            guest.Attendance.DietaryNotes = string.IsNullOrWhiteSpace(_dietaryNotes) ? null : _dietaryNotes.Trim();
+            guest.Attendance.Message = string.IsNullOrWhiteSpace(_message) ? null : _message.Trim();
+            guest.Attendance.UpdatedAt = DateTime.UtcNow;
+
+            if (_wantsPlay && _attendingEvening)
+            {
+                if (guest.Attendance.Play is null)
+                {
+                    db.Plays.Add(new Play
+                    {
+                        AttendanceId = guest.Attendance.Id,
+                        DurationMinutes = _playDuration,
+                        NeedsBeamer = _playNeedsBeamer,
+                        Requirements = string.IsNullOrWhiteSpace(_playRequirements) ? null : _playRequirements.Trim()
+                    });
+                }
+                else
+                {
+                    guest.Attendance.Play.DurationMinutes = _playDuration;
+                    guest.Attendance.Play.NeedsBeamer = _playNeedsBeamer;
+                    guest.Attendance.Play.Requirements = string.IsNullOrWhiteSpace(_playRequirements) ? null : _playRequirements.Trim();
+                }
+            }
+            else if (guest.Attendance.Play is not null)
+            {
+                db.Plays.Remove(guest.Attendance.Play);
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        _savedAttendingCeremony = _attendingCeremony;
+        _savedAttendingEvening = _attendingEvening;
+        _submitted = true;
+
+        // Fire webhook (fire-and-forget)
+        _ = SendRsvpWebhook(guest.FullName, _attendingCeremony, _attendingDinner, _attendingEvening);
+
+        await JS.InvokeVoidAsync("eval", "document.getElementById('rsvp')?.scrollIntoView({behavior:'smooth'})");
+    }
+
+    private static string FormatInvitedFor(InvitedForType type) => type switch
+    {
+        InvitedForType.DayGuest => "Daggast",
+        InvitedForType.Ceremony => "Ceremonie",
+        InvitedForType.CeremonyAndEvening => "Ceremonie & Avondfeest",
+        InvitedForType.Evening => "Avondfeest",
+        _ => type.ToString()
+    };
+
+    private const string WebhookUrl = "https://n8n.amuseic.nl/webhook/ef5c1628-4deb-4f8d-b92f-200ca59d61b0";
+
+    private async Task SendRsvpWebhook(string name, bool ceremony, bool dinner, bool evening)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var payload = new
+            {
+                Name = name,
+                Attendance = new
+                {
+                    Ceremony = ceremony,
+                    Dinner = dinner,
+                    Evening = evening
+                }
+            };
+            await client.PostAsJsonAsync(WebhookUrl, payload);
+        }
+        catch
+        {
+            // Webhook failure should not affect the user experience
+        }
+    }
+
+    private static string ToTelLink(string number) => $"tel:{number.Replace(" ", "")}";
+
+    private RenderFragment RenderChildren(JoseEnLaura.Data.Models.ScheduleItem parent, int depth = 1) => __builder =>
+    {
+        var children = _scheduleItems
+            .Where(s => s.ParentId == parent.Id)
+            .OrderBy(s => s.SortOrder)
+            .ToList();
+        if (children.Count == 0) return;
+
+        var marginLeft = depth * 10;
+
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "timeline-sub-items");
+        __builder.AddAttribute(2, "style", $"margin-left: {marginLeft}px;");
+        foreach (var child in children)
+        {
+            __builder.OpenElement(3, "div");
+            __builder.AddAttribute(4, "class", "timeline-sub-item");
+
+            if (!string.IsNullOrEmpty(child.Time))
+            {
+                __builder.OpenElement(5, "span");
+                __builder.AddAttribute(6, "class", "timeline-sub-time");
+                __builder.AddAttribute(7, "style", "padding: 0 10px 0 0;");
+                __builder.AddContent(8, child.Time);
+                __builder.CloseElement();
+            }
+
+            var childTitle = _lang == "en" && !string.IsNullOrWhiteSpace(child.TitleEn) ? child.TitleEn : child.Title;
+            __builder.OpenElement(9, "span");
+            __builder.AddAttribute(10, "class", "timeline-sub-title");
+            __builder.AddContent(11, childTitle);
+            __builder.CloseElement();
+
+            var childDesc = _lang == "en" && !string.IsNullOrWhiteSpace(child.DescriptionEn) ? child.DescriptionEn : child.Description;
+            if (!string.IsNullOrEmpty(childDesc))
+            {
+                __builder.OpenElement(12, "span");
+                __builder.AddAttribute(13, "class", "timeline-sub-desc");
+                __builder.AddContent(14, $" — {childDesc}");
+                __builder.CloseElement();
+            }
+
+            __builder.CloseElement(); // div.timeline-sub-item
+
+            // Recurse for deeper nesting
+            var grandChildren = RenderChildren(child, depth + 1);
+            grandChildren(__builder);
+        }
+        __builder.CloseElement(); // div.timeline-sub-items
+    };
+}

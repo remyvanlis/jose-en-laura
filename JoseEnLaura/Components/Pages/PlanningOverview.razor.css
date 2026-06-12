@@ -1,0 +1,362 @@
+@charset "UTF-8";
+/* ==============================================
+   PLANNING OVERVIEW — Interactive All Items View
+   ============================================== */
+.overview-page {
+  min-height: 100vh;
+  background: #f8f7f4;
+  font-family: "Josefin Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #1a1a1a;
+}
+
+.overview-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 1rem;
+}
+
+.overview-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.overview-header h1 {
+  font-family: "Playfair Display", serif;
+  font-size: 1.6rem;
+  margin: 0;
+  color: #2d2d2d;
+}
+
+.overview-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.overview-back {
+  color: #888;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: color 0.2s;
+}
+.overview-back:hover {
+  color: #c4956a;
+}
+
+.overview-stats {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-badge {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.stat-done {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.stat-progress {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.stat-todo {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.stat-total {
+  background: #faf5f0;
+  color: #c4956a;
+}
+
+.overview-filters {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.overview-filters .p-input-sm {
+  min-width: 140px;
+}
+.overview-filters .p-input-sm:first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.overview-list {
+  background: white;
+  border: 1px solid #eae8e4;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.overview-item {
+  border-bottom: 1px solid #f5f3f0;
+}
+.overview-item:last-child {
+  border-bottom: none;
+}
+.overview-item.item-active > .item-row {
+  background: #faf9f7;
+  border-bottom: 1px solid #eae8e4;
+}
+.overview-item.item-active .item-chevron {
+  color: #c4956a;
+}
+.overview-item.item-done > .item-row {
+  opacity: 0.55;
+}
+.overview-item.item-overdue > .item-row {
+  background: rgba(220, 38, 38, 0.02);
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.item-row:hover {
+  background: #faf9f7;
+}
+
+.item-content {
+  flex: 1;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done-text {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.item-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.cat-badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.note-badge {
+  font-size: 0.7rem;
+  color: #aaa;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignee-badge {
+  font-size: 0.72rem;
+  background: #f0eeeb;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  color: #666;
+}
+
+.priority-badge {
+  font-size: 0.8rem;
+}
+
+.deadline-badge {
+  font-size: 0.7rem;
+  color: #888;
+}
+.deadline-badge.overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.comment-badge {
+  font-size: 0.7rem;
+  color: #3b82f6;
+  background: #eff6ff;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.item-chevron {
+  font-size: 0.55rem;
+  color: #ccc;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  transition: color 0.15s;
+}
+
+.item-expanded {
+  background: #faf9f7;
+  padding: 0.8rem 1rem 0.8rem 2.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  animation: slideDown 0.15s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    max-height: 800px;
+    transform: translateY(0);
+  }
+}
+.item-detail-section {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.overview-empty {
+  text-align: center;
+  padding: 3rem;
+  color: #999;
+}
+
+.p-btn {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-decoration: none;
+}
+
+.p-btn-primary {
+  background: #c4956a;
+  color: white;
+}
+.p-btn-primary:hover {
+  background: #b07d55;
+}
+
+.p-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid #e0ddd8;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+.p-input:focus {
+  outline: none;
+  border-color: #c4956a;
+  box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+}
+
+.p-input-sm {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .overview-container {
+    padding: 1rem;
+  }
+  .overview-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .overview-header h1 {
+    font-size: 1.3rem;
+  }
+  .overview-stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .stat-badge {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+  }
+  .overview-filters {
+    flex-direction: column;
+  }
+  .overview-filters .p-input-sm {
+    min-width: 0;
+    width: 100%;
+  }
+  .overview-filters .p-input-sm:first-child {
+    min-width: 0;
+  }
+  .item-row {
+    flex-wrap: wrap;
+    padding: 0.6rem 0.8rem;
+    position: relative;
+    padding-right: 1.8rem;
+  }
+  .item-content {
+    white-space: normal;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+  .item-badges {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    padding-left: 0;
+    margin-top: 0.2rem;
+  }
+  .item-badges .cat-badge,
+  .item-badges .note-badge {
+    display: inline;
+    font-size: 0.68rem;
+  }
+  .note-badge {
+    max-width: 80px;
+  }
+  .item-chevron {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.6rem;
+  }
+  .item-expanded {
+    padding: 0.8rem;
+    padding-left: 1rem;
+  }
+}
+
+/*# sourceMappingURL=PlanningOverview.razor.css.map */

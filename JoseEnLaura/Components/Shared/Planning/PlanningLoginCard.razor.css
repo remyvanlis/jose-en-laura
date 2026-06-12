@@ -1,0 +1,104 @@
+/* ========================
+   LOGIN CARD COMPONENT
+   ======================== */
+.planning-login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.planning-login-card {
+  background: white;
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+.planning-login-card h1 {
+  font-family: "Playfair Display", serif;
+  font-size: 1.8rem;
+  margin-bottom: 0.3rem;
+  color: #2d2d2d;
+}
+.planning-login-card .subtitle {
+  color: #888;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+  text-align: left;
+}
+.form-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 0.3rem;
+}
+
+.p-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid #e0ddd8;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+.p-input:focus {
+  outline: none;
+  border-color: #c4956a;
+  box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+}
+
+.p-error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.p-btn {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.p-btn-primary {
+  background: #c4956a;
+  color: white;
+}
+.p-btn-primary:hover {
+  background: #b07d55;
+}
+
+.p-link-back {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #888;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.p-link-back:hover {
+  color: #c4956a;
+}
+
+/*# sourceMappingURL=PlanningLoginCard.razor.css.map */

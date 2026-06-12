@@ -1,0 +1,370 @@
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+
+<div class="inline-comments-inner">
+    <div class="inline-comments-header">
+        <span class="inline-comments-title">?? Reacties</span>
+        <button class="btn-close-comments" @onclick="HandleClose" title="Sluiten">?</button>
+    </div>
+    <div class="inline-comments-list">
+        @if (_comments.Count == 0)
+        {
+            <p class="inline-comments-empty">Nog geen reacties.</p>
+        }
+        @{ var topLevel = _comments.Where(c => c.ParentCommentId == null).OrderBy(c => c.CreatedAt).ToList(); }
+        @foreach (var comment in topLevel)
+        {
+            @RenderCommentWithReplies(comment, 0)
+        }
+    </div>
+    <div class="inline-comments-input">
+        @if (_replyToCommentId.HasValue)
+        {
+            <div class="reply-indicator">
+                <span>? Antwoord op <strong>@_replyToCommentAuthor</strong></span>
+                <button class="reply-cancel-btn" @onclick="CancelReply">?</button>
+            </div>
+        }
+        <div class="comment-input-row">
+            <textarea class="input-sm comment-textarea" rows="1" @bind="_newCommentText" @bind:event="oninput" @onkeydown="OnCommentKey" placeholder="Reactie... (Shift+Enter = nieuwe regel)"></textarea>
+            <div class="comment-input-actions">
+                <select class="input-sm input-xs importance-select" @bind="_newCommentImportance" title="Type reactie">
+                    <option value="Normal">??</option>
+                    <option value="Important">??</option>
+                    <option value="Requirement">??</option>
+                </select>
+                <label class="comment-attach-btn" title="Bestand bijvoegen">
+                    ??
+                    <InputFile OnChange="OnCommentFileAttach" style="display:none;" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+                </label>
+                @if (_pendingAttachmentName is not null)
+                {
+                    <span class="comment-pending-file" title="@_pendingAttachmentName">??</span>
+                }
+                <button class="btn-send" @onclick="AddComment" disabled="@(string.IsNullOrWhiteSpace(_newCommentText) && _pendingAttachmentId is null)">?</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int BlockId { get; set; }
+    [Parameter, EditorRequired] public AdminUser CurrentUser { get; set; } = default!;
+    [Parameter] public int? NoteId { get; set; }
+    [Parameter] public List<AdminUser> AdminUsers { get; set; } = [];
+    [Parameter] public EventCallback<int> OnCommentCountChanged { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<PlanningComment> _comments = [];
+    private string _newCommentText = "";
+    private string _newCommentImportance = "Normal";
+    private int? _editingCommentId;
+    private string _editCommentText = "";
+    private string _editCommentImportance = "Normal";
+    private int? _pendingAttachmentId;
+    private string? _pendingAttachmentName;
+    private int? _replyToCommentId;
+    private string? _replyToCommentAuthor;
+
+    // Track previous BlockId to avoid reloading (and clearing input) on parent re-renders
+    private int _previousBlockId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Only reload comments when the block actually changes,
+        // NOT on every parent re-render (which would clear _newCommentText).
+        if (_previousBlockId != BlockId)
+        {
+            _previousBlockId = BlockId;
+            await LoadComments();
+        }
+    }
+
+    private async Task LoadComments()
+    {
+        _editingCommentId = null;
+        _editCommentText = "";
+        _newCommentText = "";
+        _newCommentImportance = "Normal";
+        _pendingAttachmentId = null;
+        _pendingAttachmentName = null;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _comments = await db.PlanningComments
+            .Include(c => c.CreatedBy)
+            .Include(c => c.Attachment)
+            .Where(c => c.BlockId == BlockId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task AddComment()
+    {
+        if (string.IsNullOrWhiteSpace(_newCommentText) && _pendingAttachmentId is null) return;
+
+        var importance = Enum.TryParse<CommentImportance>(_newCommentImportance, out var imp) ? imp : CommentImportance.Normal;
+
+        var mentionIds = PlanningHelpers.ExtractMentionedUserIds(_newCommentText ?? "", AdminUsers);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var comment = new PlanningComment
+        {
+            BlockId = BlockId,
+            Content = (_newCommentText ?? "").Trim(),
+            Importance = importance,
+            MentionedUserIds = PlanningHelpers.SerializeMentionIds(mentionIds),
+            CreatedById = CurrentUser.Id,
+            AttachmentId = _pendingAttachmentId,
+            ParentCommentId = _replyToCommentId
+        };
+        db.PlanningComments.Add(comment);
+
+        // Update block's UpdatedAt so the "Nieuw" badge shows for others
+        var block = await db.PlanningBlocks.FindAsync(BlockId);
+        if (block is not null)
+        {
+            block.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Also update the parent note's UpdatedAt
+        if (NoteId.HasValue)
+        {
+            var note = await db.PlanningNotes.FindAsync(NoteId.Value);
+            if (note is not null)
+            {
+                note.UpdatedAt = DateTime.UtcNow;
+                note.UpdatedById = CurrentUser.Id;
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        comment.CreatedBy = CurrentUser;
+        if (_pendingAttachmentId.HasValue)
+        {
+            comment.Attachment = await db.PlanningAttachments.FindAsync(_pendingAttachmentId.Value);
+        }
+
+        _comments.Add(comment);
+        _newCommentText = "";
+        _newCommentImportance = "Normal";
+        _pendingAttachmentId = null;
+        _pendingAttachmentName = null;
+        _replyToCommentId = null;
+        _replyToCommentAuthor = null;
+
+        await OnCommentCountChanged.InvokeAsync(_comments.Count);
+
+        if (NoteId.HasValue)
+        {
+            try
+            {
+                db.PlanningAuditLogs.Add(new PlanningAuditLog
+                {
+                    NoteId = NoteId.Value,
+                    Action = "comment_added",
+                    Details = $"Reactie geplaatst",
+                    UserId = CurrentUser.Id
+                });
+                await db.SaveChangesAsync();
+            }
+            catch { }
+        }
+    }
+
+    private async Task OnCommentFileAttach(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        const long maxSize = 10 * 1024 * 1024;
+        if (file.Size > maxSize) return;
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var data = ms.ToArray();
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attachment = new PlanningAttachment
+            {
+                FileName = file.Name,
+                ContentType = file.ContentType,
+                Data = data,
+                FileSize = data.Length,
+                UploadedById = CurrentUser.Id
+            };
+            db.PlanningAttachments.Add(attachment);
+            await db.SaveChangesAsync();
+
+            _pendingAttachmentId = attachment.Id;
+            _pendingAttachmentName = file.Name;
+        }
+        catch { }
+    }
+
+    private void StartEditComment(PlanningComment comment)
+    {
+        _editingCommentId = comment.Id;
+        _editCommentText = comment.Content;
+        _editCommentImportance = comment.Importance.ToString();
+    }
+
+    private void CancelCommentEdit()
+    {
+        _editingCommentId = null;
+        _editCommentText = "";
+        _editCommentImportance = "Normal";
+    }
+
+    private async Task SaveCommentEdit()
+    {
+        if (_editingCommentId is null || string.IsNullOrWhiteSpace(_editCommentText)) return;
+
+        var comment = _comments.FirstOrDefault(c => c.Id == _editingCommentId);
+        if (comment is null || comment.CreatedById != CurrentUser.Id) return;
+
+        var importance = Enum.TryParse<CommentImportance>(_editCommentImportance, out var imp) ? imp : CommentImportance.Normal;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbComment = await db.PlanningComments.FindAsync(_editingCommentId.Value);
+        if (dbComment is not null && dbComment.CreatedById == CurrentUser.Id)
+        {
+            dbComment.Content = _editCommentText.Trim();
+            dbComment.Importance = importance;
+            await db.SaveChangesAsync();
+            comment.Content = dbComment.Content;
+            comment.Importance = importance;
+        }
+
+        _editingCommentId = null;
+        _editCommentText = "";
+        _editCommentImportance = "Normal";
+    }
+
+    private async Task DeleteComment(PlanningComment comment)
+    {
+        if (comment.CreatedById != CurrentUser.Id) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbComment = await db.PlanningComments.FindAsync(comment.Id);
+        if (dbComment is not null && dbComment.CreatedById == CurrentUser.Id)
+        {
+            db.PlanningComments.Remove(dbComment);
+            await db.SaveChangesAsync();
+        }
+
+        _comments.Remove(comment);
+        await OnCommentCountChanged.InvokeAsync(_comments.Count);
+    }
+
+    private async Task HandleClose() => await OnClose.InvokeAsync();
+
+    private async Task OnEditCommentKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey) await SaveCommentEdit();
+        else if (e.Key == "Escape") CancelCommentEdit();
+    }
+
+    private async Task OnCommentKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey) await AddComment();
+    }
+
+    private void StartReply(PlanningComment comment)
+    {
+        _replyToCommentId = comment.Id;
+        _replyToCommentAuthor = comment.CreatedBy?.Name ?? "Onbekend";
+    }
+
+    private void CancelReply()
+    {
+        _replyToCommentId = null;
+        _replyToCommentAuthor = null;
+    }
+
+    private RenderFragment RenderCommentWithReplies(PlanningComment comment, int indent) => __builder =>
+    {
+        var capturedComment = comment;
+        var isOwn = comment.CreatedById == CurrentUser.Id;
+        var importanceCss = PlanningHelpers.GetCommentImportanceCss(comment.Importance);
+        var marginLeft = indent * 24;
+
+        <div class="inline-comment @(isOwn ? "own" : "") @importanceCss" style="margin-left: @(marginLeft)px;">
+            @if (comment.Importance != CommentImportance.Normal)
+            {
+                <div class="comment-importance-bar importance-@comment.Importance.ToString().ToLower()"></div>
+            }
+            @if (comment.ParentCommentId.HasValue)
+            {
+                <span class="comment-reply-indicator">?</span>
+            }
+            <div class="comment-avatar">@(comment.CreatedBy?.Name?[..1] ?? "?")</div>
+            <div class="comment-body">
+                <div class="comment-meta">
+                    <strong>@comment.CreatedBy?.Name</strong>
+                    @if (comment.Importance != CommentImportance.Normal)
+                    {
+                        <span class="comment-importance-badge importance-@comment.Importance.ToString().ToLower()">
+                            @(comment.Importance == CommentImportance.Important ? "? Belangrijk" : "?? Vereiste")
+                        </span>
+                    }
+                    <span class="comment-time">@comment.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                    <button class="comment-action-btn comment-reply-btn" @onclick="() => StartReply(capturedComment)" title="Beantwoorden">?</button>
+                    @if (isOwn)
+                    {
+                        <div class="comment-own-actions">
+                            @if (_editingCommentId == comment.Id)
+                            {
+                                <button class="comment-action-btn" @onclick="SaveCommentEdit" title="Opslaan">?</button>
+                                <button class="comment-action-btn" @onclick="CancelCommentEdit" title="Annuleren">?</button>
+                            }
+                            else
+                            {
+                                <button class="comment-action-btn" @onclick="() => StartEditComment(capturedComment)" title="Bewerken">?</button>
+                                <button class="comment-action-btn comment-action-delete" @onclick="() => DeleteComment(capturedComment)" title="Verwijderen">??</button>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (_editingCommentId == comment.Id)
+                {
+                    <textarea class="input-sm inline-comment-edit" rows="2" @bind="_editCommentText" @bind:event="oninput"
+                              @onkeydown="OnEditCommentKey"></textarea>
+                    <div class="comment-edit-importance">
+                        <select class="input-sm input-xs" @bind="_editCommentImportance">
+                            <option value="Normal">Normaal</option>
+                            <option value="Important">? Belangrijk</option>
+                            <option value="Requirement">?? Vereiste</option>
+                        </select>
+                    </div>
+                }
+                else
+                {
+                    <div class="comment-text">@((MarkupString)PlanningHelpers.RenderMentions(comment.Content, AdminUsers))</div>
+                }
+                @if (comment.AttachmentId.HasValue && comment.Attachment is not null)
+                {
+                    <div class="comment-attachment">
+                        @if (comment.Attachment.ContentType.StartsWith("image/"))
+                        {
+                            <img src="/api/planning-attachment/@comment.AttachmentId" alt="@comment.Attachment.FileName" class="comment-attachment-preview" />
+                        }
+                        else
+                        {
+                            <a href="/api/planning-attachment/@comment.AttachmentId" target="_blank" class="attachment-link">?? @comment.Attachment.FileName</a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @foreach (var reply in _comments.Where(c => c.ParentCommentId == comment.Id).OrderBy(c => c.CreatedAt))
+        {
+            @RenderCommentWithReplies(reply, indent + 1)
+        }
+    };
+}

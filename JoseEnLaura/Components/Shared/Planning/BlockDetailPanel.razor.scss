@@ -1,0 +1,63 @@
+﻿@use 'variables' as *;
+
+.detail-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    align-items: end;
+}
+
+.detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 120px;
+
+    label {
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: $text-lighter;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+}
+
+.p-input-xs {
+    font-size: 0.78rem !important;
+    padding: 3px 6px !important;
+    height: 26px !important;
+    border-radius: $radius-sm;
+    width: 100%;
+    border: 1.5px solid $border-input;
+    font-family: inherit;
+    background: $bg-white;
+    box-sizing: border-box;
+
+    &:focus {
+        outline: none;
+        border-color: $accent;
+        box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+    }
+}
+
+@media (max-width: 768px) {
+    .detail-grid {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .detail-field {
+        min-width: 0;
+        width: 100%;
+
+        label {
+            font-size: 0.6rem;
+        }
+    }
+
+    .p-input-xs {
+        font-size: 0.75rem !important;
+        height: 28px !important;
+    }
+}
+

@@ -1,0 +1,272 @@
+@page "/access"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedLocalStorage LocalStorage
+@inject IConfiguration Configuration
+@inject NavigationManager Nav
+@using JoseEnLaura.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+
+<PageTitle>Toegang — José & Laura</PageTitle>
+
+<div class="access-page" style="@_accessBgStyle">
+    <div class="access-overlay"></div>
+    <div class="access-card">
+        <div class="access-header">
+            <p class="access-kicker">Welkom bij de bruiloft van</p>
+            <h1 class="access-title">José <span class="amp">&amp;</span> Laura</h1>
+            <div class="access-divider">
+                <span class="divider-leaf">&#127800;</span>
+            </div>
+            <p class="access-date">@_displayDate</p>
+        </div>
+        <div class="access-body">
+            <div class="access-ornament">&#10047;</div>
+            <p class="access-subtitle">Vul de code van jullie kaart in om verder te gaan</p>
+
+            @if (_isLockedOut)
+            {
+                <div class="access-lockout">
+                    <div class="lockout-icon">&#128274;</div>
+                    <h3>Te veel pogingen</h3>
+                    <p>Probeer het opnieuw over @_lockoutRemainingText.</p>
+                </div>
+            }
+            else
+            {
+                <div class="access-input-group">
+                    <label class="access-label" for="access-code">Toegangscode</label>
+                    <input id="access-code"
+                           type="text"
+                           class="form-input access-input"
+                           @bind="_code"
+                           @bind:event="oninput"
+                           @onkeydown="HandleKeyDown"
+                           placeholder="Vul hier de code in..."
+                           maxlength="30"
+                           autocomplete="off"
+                           disabled="@_isSubmitting" />
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="access-error">
+                        <span class="access-error-icon">&#9888;</span>
+                        @_error
+                        @if (_failedAttempts >= 7 && _failedAttempts < MaxAttempts)
+                        {
+                            <br /><small>Nog @(MaxAttempts - _failedAttempts) poging(en) voordat je 3 uur moet wachten.</small>
+                        }
+                    </div>
+                }
+
+                <button class="btn-rsvp access-button" @onclick="Submit" disabled="@_isSubmitting">
+                    @if (_isSubmitting)
+                    {
+                        <span>Even geduld...</span>
+                    }
+                    else
+                    {
+                        <span>&#128275; Ontgrendel</span>
+                    }
+                </button>
+            }
+
+            <p class="access-note">De code staat op jullie uitnodiging.<br/>Na het invoeren wordt deze onthouden op dit apparaat.</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _accessBgStyle = "";
+    private string _displayDate = "17 oktober 2026";
+    private const string AccessKey = "wedding_access_code";
+    private const string AttemptsKey = "wedding_access_attempts";
+    private const string LockoutKey = "wedding_access_lockout";
+    private const int MaxAttempts = 10;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromHours(3);
+
+    private string _code = "";
+    private string _error = "";
+    private string _expectedAccessCode = "";
+    private bool _checkedStoredCode;
+    private bool _isSubmitting;
+
+    // Rate limiting
+    private int _failedAttempts;
+    private bool _isLockedOut;
+    private string _lockoutRemainingText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _expectedAccessCode = Configuration["Access:Code"] ?? "";
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var bg = await db.SiteImages.FirstOrDefaultAsync(i => i.Slot == "access-bg");
+            if (bg is not null)
+                _accessBgStyle = $"background-image: url('/api/site-image/access-bg?v={bg.Id}');";
+            var dateText = await db.SiteTexts.FirstOrDefaultAsync(t => t.Key == "hero.date");
+            if (dateText is not null && !string.IsNullOrWhiteSpace(dateText.Value))
+                _displayDate = dateText.Value;
+        }
+        catch { /* access page must still render if the DB is unavailable */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _checkedStoredCode)
+        {
+            return;
+        }
+
+        _checkedStoredCode = true;
+
+        // If no code configured, skip access gate
+        if (string.IsNullOrWhiteSpace(_expectedAccessCode))
+        {
+            Nav.NavigateTo("/", forceLoad: true);
+            return;
+        }
+
+        // Already authenticated?
+        ProtectedBrowserStorageResult<string> result;
+        try
+        {
+            result = await LocalStorage.GetAsync<string>(AccessKey);
+        }
+        catch (Exception _)
+        {
+            // do nothing!
+            return;
+        }
+        if (result is { Success: true, Value: not null } &&
+            string.Equals(result.Value, _expectedAccessCode, StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("/", forceLoad: true);
+            return;
+        }
+
+        // Load failed attempts & lockout state
+        var attemptsResult = await LocalStorage.GetAsync<int>(AttemptsKey);
+        if (attemptsResult is { Success: true })
+        {
+            _failedAttempts = attemptsResult.Value;
+        }
+
+        var lockoutResult = await LocalStorage.GetAsync<long>(LockoutKey);
+        if (lockoutResult is { Success: true, Value: > 0 })
+        {
+            var lockoutUntil = DateTimeOffset.FromUnixTimeMilliseconds(lockoutResult.Value);
+            if (DateTimeOffset.UtcNow < lockoutUntil)
+            {
+                _isLockedOut = true;
+                var remaining = lockoutUntil - DateTimeOffset.UtcNow;
+                _lockoutRemainingText = FormatTimeRemaining(remaining);
+            }
+            else
+            {
+                // Lockout expired — reset
+                _failedAttempts = 0;
+                _isLockedOut = false;
+                await LocalStorage.SetAsync(AttemptsKey, 0);
+                await LocalStorage.DeleteAsync(LockoutKey);
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task Submit()
+    {
+        _error = "";
+        _isSubmitting = true;
+        StateHasChanged();
+
+        try
+        {
+            // Check lockout
+            var lockoutResult = await LocalStorage.GetAsync<long>(LockoutKey);
+            if (lockoutResult is { Success: true, Value: > 0 })
+            {
+                var lockoutUntil = DateTimeOffset.FromUnixTimeMilliseconds(lockoutResult.Value);
+                if (DateTimeOffset.UtcNow < lockoutUntil)
+                {
+                    _isLockedOut = true;
+                    _lockoutRemainingText = FormatTimeRemaining(lockoutUntil - DateTimeOffset.UtcNow);
+                    return;
+                }
+                else
+                {
+                    _failedAttempts = 0;
+                    _isLockedOut = false;
+                    await LocalStorage.SetAsync(AttemptsKey, 0);
+                    await LocalStorage.DeleteAsync(LockoutKey);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(_expectedAccessCode))
+            {
+                _error = "Toegangscode is nog niet ingesteld.";
+                return;
+            }
+
+            var trimmed = _code.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                _error = "Vul de toegangscode in.";
+                return;
+            }
+
+            if (!string.Equals(trimmed, _expectedAccessCode, StringComparison.OrdinalIgnoreCase))
+            {
+                _failedAttempts++;
+                await LocalStorage.SetAsync(AttemptsKey, _failedAttempts);
+
+                if (_failedAttempts >= MaxAttempts)
+                {
+                    var lockoutUntil = DateTimeOffset.UtcNow.Add(LockoutDuration);
+                    await LocalStorage.SetAsync(LockoutKey, lockoutUntil.ToUnixTimeMilliseconds());
+                    _isLockedOut = true;
+                    _lockoutRemainingText = FormatTimeRemaining(LockoutDuration);
+                    return;
+                }
+
+                _error = "Deze code klopt niet. Probeer het opnieuw.";
+                return;
+            }
+
+            // Success!
+            await LocalStorage.SetAsync(AccessKey, trimmed);
+            await LocalStorage.SetAsync(AttemptsKey, 0);
+            await LocalStorage.DeleteAsync(LockoutKey);
+            Nav.NavigateTo("/", forceLoad: true);
+        }
+        finally
+        {
+            _isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await Submit();
+        }
+    }
+
+    private static string FormatTimeRemaining(TimeSpan remaining)
+    {
+        if (remaining.TotalMinutes < 1) return "minder dan een minuut";
+        if (remaining.TotalHours < 1) return $"{(int)remaining.TotalMinutes} minuten";
+
+        var hours = (int)remaining.TotalHours;
+        var minutes = remaining.Minutes;
+        if (minutes == 0) return $"{hours} uur";
+        return $"{hours} uur en {minutes} minuten";
+    }
+}
+

@@ -1,0 +1,23 @@
+/* Mark Complete Button */
+.mark-complete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 1px 3px;
+  border-radius: 4px;
+  color: #ccc;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.mark-complete-btn:hover {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+  transform: scale(1.15);
+}
+.mark-complete-btn.is-done {
+  color: #22c55e;
+}
+
+/*# sourceMappingURL=MarkCompleteButton.razor.css.map */

@@ -1,0 +1,26 @@
+﻿@use 'variables' as *;
+
+/* Mark Complete Button */
+.mark-complete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 1px 3px;
+    border-radius: $radius-sm;
+    color: $text-dim;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+
+    &:hover {
+        color: $color-success;
+        background: rgba(34, 197, 94, 0.08);
+        transform: scale(1.15);
+    }
+
+    &.is-done {
+        color: $color-success;
+    }
+}
+

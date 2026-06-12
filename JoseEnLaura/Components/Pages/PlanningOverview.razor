@@ -1,0 +1,327 @@
+@page "/planning/overview"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject ProtectedLocalStorage LocalStorage
+@inject IJSRuntime JS
+
+<PageTitle>Overzicht — Planning</PageTitle>
+
+<div class="overview-page" @onclick="OnPageClick">
+    @if (_isLoading)
+    {
+        <div class="overview-center">
+            <p>Laden...</p>
+        </div>
+    }
+    else if (_currentUser is null)
+    {
+        <div class="overview-center">
+            <h2>?? Overzicht</h2>
+            <p>Je bent niet ingelogd.</p>
+            <a href="/planning" class="p-btn p-btn-primary">? Ga naar Planning</a>
+        </div>
+    }
+    else
+    {
+        <div class="overview-container">
+            <div class="overview-header">
+                <div class="overview-header-left">
+                    <a href="/planning" class="overview-back">? Planning</a>
+                    <h1>?? Alle items</h1>
+                </div>
+                <div class="overview-stats">
+                    <span class="stat-badge stat-done">? @_items.Count(i => i.IsDone) klaar</span>
+                    <span class="stat-badge stat-progress">?? @_items.Count(i => i.IsInProgress) bezig</span>
+                    <span class="stat-badge stat-todo">? @_items.Count(i => !i.IsDone && !i.IsInProgress) open</span>
+                    <span class="stat-badge stat-total">Totaal: @_items.Count</span>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="overview-filters">
+                <input type="text" class="p-input p-input-sm" placeholder="?? Zoeken..." @bind="_searchQuery" @bind:event="oninput" />
+                <select class="p-input p-input-sm" @bind="_filterStatus">
+                    <option value="">Alle statussen</option>
+                    <option value="done">? Klaar</option>
+                    <option value="inprogress">?? Bezig</option>
+                    <option value="open">? Open</option>
+                    <option value="overdue">?? Achterstallig</option>
+                    <option value="unread">?? Ongelezen</option>
+                    <option value="mentioned">?? Genoemd</option>
+                </select>
+                <select class="p-input p-input-sm" @bind="_filterAssignee">
+                    <option value="0">Alle personen</option>
+                    @foreach (var u in _adminUsers)
+                    {
+                        <option value="@u.Id">@u.Name</option>
+                    }
+                </select>
+                <select class="p-input p-input-sm" @bind="_filterCategory">
+                    <option value="0">Alle categorieën</option>
+                    @foreach (var cat in _categories)
+                    {
+                        <option value="@cat.Id">@cat.Icon @cat.Name</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Items list -->
+            <div class="overview-list">
+                @{ var filtered = FilteredItems.ToList(); }
+                @if (filtered.Count == 0)
+                {
+                    <div class="overview-empty"><p>Geen items gevonden.</p></div>
+                }
+                @foreach (var item in filtered)
+                {
+                    var capturedItem = item;
+                    var isActive = _activeBlockId == item.Block.Id;
+                    var isDone = item.Block.IsChecked || item.Block.ItemStatus == BlockItemStatus.Done;
+                    <div class="overview-item @(isDone ? "item-done" : "") @(item.IsOverdue ? "item-overdue" : "") @(isActive ? "item-active" : "")">
+                        <div class="item-row" @onclick="() => ToggleActive(capturedItem.Block.Id)" @onclick:stopPropagation>
+                            @* Mark complete button — always visible *@
+                            <MarkCompleteButton Block="capturedItem.Block" OnToggled="() => SaveBlockChange(capturedItem)" />
+
+                            @* Type dropdown *@
+                            <BlockTypeDropdown Block="capturedItem.Block" OnTypeChanged="(type) => OnTypeChanged(capturedItem, type)" />
+
+                            @* Content *@
+                            <span class="item-content @(isDone ? "done-text" : "")">@item.Block.Content</span>
+
+                            @* Badges *@
+                            <div class="item-badges">
+                                <span class="cat-badge" style="color: @(item.CategoryColor ?? "#666")">@item.CategoryIcon @item.CategoryName</span>
+                                <span class="note-badge">@item.NoteTitle</span>
+                                @if (item.AssigneeName is not null)
+                                {
+                                    <span class="assignee-badge">@item.AssigneeName</span>
+                                }
+                                @if (item.Block.Priority.HasValue)
+                                {
+                                    <span class="priority-badge">@PlanningHelpers.GetPriorityIcon(item.Block.Priority.Value)</span>
+                                }
+                                @if (item.Block.Deadline.HasValue)
+                                {
+                                    <span class="deadline-badge @(item.IsOverdue ? "overdue" : "")">?? @item.Block.Deadline.Value.ToString("dd MMM")</span>
+                                }
+                                @if (item.CommentCount > 0)
+                                {
+                                    <span class="comment-badge">??@item.CommentCount</span>
+                                }
+                            </div>
+
+                            @* Expand icon *@
+                            <span class="item-chevron">@(isActive ? "?" : "?")</span>
+                        </div>
+
+                        @* Expanded panel: detail + comments *@
+                        @if (isActive)
+                        {
+                            <div class="item-expanded" @onclick:stopPropagation>
+                                <div class="item-detail-section">
+                                    <BlockDetailPanel Block="capturedItem.Block" AdminUsers="_adminUsers" OnChanged="() => SaveBlockChange(capturedItem)" />
+                                </div>
+                                <div class="item-comments-section">
+                                    <BlockInlineComments BlockId="capturedItem.Block.Id" CurrentUser="_currentUser!" NoteId="capturedItem.Block.NoteId"
+                                                         AdminUsers="_adminUsers"
+                                                         OnCommentCountChanged="(count) => { capturedItem.CommentCount = count; StateHasChanged(); }"
+                                                         OnClose="() => _activeBlockId = null" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const string SessionKey = "admin_session";
+    private bool _isLoading = true;
+    private AdminUser? _currentUser;
+    private List<AdminUser> _adminUsers = [];
+    private List<PlanningCategory> _categories = [];
+    private List<OverviewItem> _items = [];
+    private int? _activeBlockId;
+
+    // Filters
+    private string _searchQuery = "";
+    private string _filterStatus = "";
+    private int _filterAssignee;
+    private int _filterCategory;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _adminUsers = await db.AdminUsers.ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var result = await LocalStorage.GetAsync<AdminSession>(SessionKey);
+            if (result is { Success: true, Value: not null })
+            {
+                var session = result.Value;
+                if (session.ExpiresUtc > DateTime.UtcNow)
+                {
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var user = await db.AdminUsers.FindAsync(session.UserId);
+                    if (user is not null)
+                    {
+                        _currentUser = user;
+                        await LoadItems();
+                    }
+                }
+            }
+        }
+        catch { }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadItems()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _categories = await db.PlanningCategories.OrderBy(c => c.SortOrder).ToListAsync();
+
+        var blocks = await db.PlanningBlocks
+            .Include(b => b.Note).ThenInclude(n => n!.Category)
+            .Include(b => b.Note).ThenInclude(n => n!.AssignedTo)
+            .Include(b => b.AssignedTo)
+            .Where(b => b.Type == BlockType.Checkbox || b.ItemStatus.HasValue)
+            .OrderBy(b => b.Note!.Category!.SortOrder)
+            .ThenBy(b => b.Note!.SortOrder)
+            .ThenBy(b => b.SortOrder)
+            .ToListAsync();
+
+        var blockIds = blocks.Select(b => b.Id).ToList();
+        var commentCounts = await db.PlanningComments
+            .Where(c => blockIds.Contains(c.BlockId))
+            .GroupBy(c => c.BlockId)
+            .Select(g => new { BlockId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BlockId, x => x.Count);
+
+        _items = blocks.Select(b => new OverviewItem
+        {
+            Block = b,
+            NoteTitle = b.Note?.Title ?? "",
+            CategoryName = b.Note?.Category?.Name ?? "",
+            CategoryIcon = b.Note?.Category?.Icon ?? "??",
+            CategoryColor = b.Note?.Category?.Color,
+            CategoryId = b.Note?.CategoryId ?? 0,
+            AssigneeName = b.AssignedTo?.Name ?? b.Note?.AssignedTo?.Name,
+            CommentCount = commentCounts.GetValueOrDefault(b.Id),
+            IsDone = b.IsChecked || b.ItemStatus == BlockItemStatus.Done,
+            IsInProgress = !b.IsChecked && b.ItemStatus == BlockItemStatus.InProgress,
+            IsOverdue = b.Deadline.HasValue && b.Deadline.Value < DateTime.UtcNow && !b.IsChecked && b.ItemStatus != BlockItemStatus.Done
+        }).ToList();
+    }
+
+    private void ToggleActive(int blockId)
+    {
+        _activeBlockId = _activeBlockId == blockId ? null : blockId;
+    }
+
+    private void OnPageClick()
+    {
+        // Click outside closes active item
+        _activeBlockId = null;
+    }
+
+    private async Task OnTypeChanged(OverviewItem item, BlockType newType)
+    {
+        item.Block.Type = newType;
+        if (newType != BlockType.Checkbox) item.Block.IsChecked = false;
+        await SaveBlockChange(item);
+    }
+
+    private async Task SaveBlockChange(OverviewItem item)
+    {
+        item.RefreshState();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var dbBlock = await db.PlanningBlocks.FindAsync(item.Block.Id);
+            if (dbBlock is not null)
+            {
+                dbBlock.Type = item.Block.Type;
+                dbBlock.IsChecked = item.Block.IsChecked;
+                dbBlock.ItemStatus = item.Block.ItemStatus;
+                dbBlock.Priority = item.Block.Priority;
+                dbBlock.AssignedToId = item.Block.AssignedToId;
+                dbBlock.Deadline = item.Block.Deadline;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private IEnumerable<OverviewItem> FilteredItems
+    {
+        get
+        {
+            var q = _items.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var search = _searchQuery.Trim();
+                q = q.Where(i => i.Block.Content.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || i.NoteTitle.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || i.CategoryName.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            q = _filterStatus switch
+            {
+                "done" => q.Where(i => i.IsDone),
+                "inprogress" => q.Where(i => i.IsInProgress),
+                "open" => q.Where(i => !i.IsDone && !i.IsInProgress),
+                "overdue" => q.Where(i => i.IsOverdue),
+                _ => q
+            };
+
+            if (_filterAssignee > 0)
+                q = q.Where(i => i.Block.AssignedToId == _filterAssignee);
+
+            if (_filterCategory > 0)
+                q = q.Where(i => i.CategoryId == _filterCategory);
+
+            return q;
+        }
+    }
+
+    private sealed record AdminSession(int UserId, DateTime ExpiresUtc);
+
+    private class OverviewItem
+    {
+        public required PlanningBlock Block { get; set; }
+        public string NoteTitle { get; set; } = "";
+        public string CategoryName { get; set; } = "";
+        public string CategoryIcon { get; set; } = "??";
+        public string? CategoryColor { get; set; }
+        public int CategoryId { get; set; }
+        public string? AssigneeName { get; set; }
+        public int CommentCount { get; set; }
+        public bool IsDone { get; set; }
+        public bool IsInProgress { get; set; }
+        public bool IsOverdue { get; set; }
+
+        public void RefreshState()
+        {
+            IsDone = Block.IsChecked || Block.ItemStatus == BlockItemStatus.Done;
+            IsInProgress = !Block.IsChecked && Block.ItemStatus == BlockItemStatus.InProgress;
+            IsOverdue = Block.Deadline.HasValue && Block.Deadline.Value < DateTime.UtcNow && !Block.IsChecked && Block.ItemStatus != BlockItemStatus.Done;
+        }
+    }
+}

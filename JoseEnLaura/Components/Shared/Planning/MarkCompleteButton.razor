@@ -1,0 +1,38 @@
+@using JoseEnLaura.Data.Models
+
+@{
+    var isDone = Block.IsChecked || Block.ItemStatus == BlockItemStatus.Done;
+}
+
+<button class="mark-complete-btn @(isDone ? "is-done" : "")"
+        @onclick="Toggle"
+        @onclick:stopPropagation
+        title="@(isDone ? "Markeer als niet klaar" : "Markeer als klaar")">
+    @(isDone ? "?" : "?")
+</button>
+
+@code {
+    [Parameter, EditorRequired] public PlanningBlock Block { get; set; } = default!;
+    [Parameter] public EventCallback OnToggled { get; set; }
+
+    private async Task Toggle()
+    {
+        var isDone = Block.IsChecked || Block.ItemStatus == BlockItemStatus.Done;
+        if (isDone)
+        {
+            // Undo: clear completion
+            Block.IsChecked = false;
+            if (Block.ItemStatus == BlockItemStatus.Done)
+                Block.ItemStatus = null;
+        }
+        else
+        {
+            // Mark done
+            if (Block.Type == BlockType.Checkbox)
+                Block.IsChecked = true;
+            Block.ItemStatus = BlockItemStatus.Done;
+        }
+        await OnToggled.InvokeAsync();
+    }
+}
+

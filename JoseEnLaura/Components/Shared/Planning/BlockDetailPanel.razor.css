@@ -1,0 +1,57 @@
+.detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+.detail-field label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.p-input-xs {
+  font-size: 0.78rem !important;
+  padding: 3px 6px !important;
+  height: 26px !important;
+  border-radius: 4px;
+  width: 100%;
+  border: 1.5px solid #e0ddd8;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+}
+.p-input-xs:focus {
+  outline: none;
+  border-color: #c4956a;
+  box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+}
+
+@media (max-width: 768px) {
+  .detail-grid {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .detail-field {
+    min-width: 0;
+    width: 100%;
+  }
+  .detail-field label {
+    font-size: 0.6rem;
+  }
+  .p-input-xs {
+    font-size: 0.75rem !important;
+    height: 28px !important;
+  }
+}
+
+/*# sourceMappingURL=BlockDetailPanel.razor.css.map */

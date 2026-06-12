@@ -1,0 +1,63 @@
+@using JoseEnLaura.Data.Models
+
+<div class="block-type-dropdown-wrap" @onclick:stopPropagation>
+    @if (_isOpen)
+    {
+        <div class="type-dropdown-backdrop" @onclick="() => _isOpen = false"></div>
+        <div class="type-dropdown">
+            <button class="type-option" @onclick='() => Select(BlockType.Text)'>
+                <span class="type-icon">📝</span> Tekst
+            </button>
+            <button class="type-option" @onclick='() => Select(BlockType.Checkbox)'>
+                <span class="type-icon type-icon-checkbox">?</span> Taak
+            </button>
+            <button class="type-option" @onclick='() => Select(BlockType.Heading)'>
+                <span class="type-icon type-icon-heading">H</span> Heading
+            </button>
+            <button class="type-option" @onclick='() => Select(BlockType.Question)'>
+                <span class="type-icon type-icon-question">?</span> Vraag
+            </button>
+            <button class="type-option" @onclick='() => Select(BlockType.Important)'>
+                <span class="type-icon type-icon-important">!</span> Belangrijk
+            </button>
+        </div>
+    }
+    else
+    {
+        <button class="block-type-btn @GetTypeClass()"
+                @onclick="() => _isOpen = true"
+                title="Klik om type te wijzigen">
+            @(PlanningHelpers.GetBlockTypeIcon(Block))
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlanningBlock Block { get; set; } = default!;
+    [Parameter] public EventCallback<BlockType> OnTypeChanged { get; set; }
+
+    private bool _isOpen;
+
+    private async Task Select(BlockType type)
+    {
+        _isOpen = false;
+        if (type != Block.Type)
+        {
+            await OnTypeChanged.InvokeAsync(type);
+        }
+    }
+
+    private string GetTypeClass()
+    {
+        return Block.Type switch
+        {
+            BlockType.Checkbox when Block.IsChecked => "type-checked",
+            BlockType.Checkbox => "",
+            BlockType.Question => "type-question",
+            BlockType.Important => "type-important",
+            BlockType.Heading => "type-heading",
+            _ => ""
+        };
+    }
+}
+

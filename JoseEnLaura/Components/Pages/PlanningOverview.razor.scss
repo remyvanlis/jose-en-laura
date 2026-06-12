@@ -1,0 +1,355 @@
+﻿@use '../Shared/Planning/variables' as *;
+
+/* ==============================================
+   PLANNING OVERVIEW — Interactive All Items View
+   ============================================== */
+
+.overview-page {
+    min-height: 100vh;
+    background: $bg-page;
+    font-family: $font-sans;
+    color: $text-dark;
+}
+
+.overview-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 1rem;
+}
+
+.overview-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+
+    h1 {
+        font-family: $font-serif;
+        font-size: 1.6rem;
+        margin: 0;
+        color: $text-heading;
+    }
+}
+
+.overview-header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.overview-back {
+    color: $text-light;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+
+    &:hover {
+        color: $accent;
+    }
+}
+
+.overview-stats {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.stat-badge {
+    font-size: 0.78rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: $radius-md;
+    font-weight: 500;
+}
+
+.stat-done { background: $color-success-bg; color: $color-success-dark; }
+.stat-progress { background: $color-info-bg; color: $color-info-dark; }
+.stat-todo { background: #f8fafc; color: #64748b; }
+.stat-total { background: #faf5f0; color: $accent; }
+
+// Filters
+.overview-filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+
+    .p-input-sm {
+        min-width: 140px;
+
+        &:first-child {
+            flex: 1;
+            min-width: 200px;
+        }
+    }
+}
+
+// Items list
+.overview-list {
+    background: $bg-white;
+    border: 1px solid $border;
+    border-radius: $radius-xl;
+    overflow: hidden;
+}
+
+.overview-item {
+    border-bottom: 1px solid $border-lighter;
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &.item-active {
+        > .item-row {
+            background: $bg-section;
+            border-bottom: 1px solid $border;
+        }
+
+        .item-chevron {
+            color: $accent;
+        }
+    }
+
+    &.item-done > .item-row {
+        opacity: 0.55;
+    }
+
+    &.item-overdue > .item-row {
+        background: rgba(220, 38, 38, 0.02);
+    }
+}
+
+.item-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.8rem;
+    cursor: pointer;
+    transition: background 0.1s;
+
+    &:hover {
+        background: $bg-section;
+    }
+}
+
+.item-content {
+    flex: 1;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.done-text {
+    text-decoration: line-through;
+    color: $text-lighter;
+}
+
+// Badges
+.item-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.cat-badge { font-size: 0.72rem; font-weight: 500; }
+.note-badge { font-size: 0.7rem; color: $text-faint; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assignee-badge { font-size: 0.72rem; background: #f0eeeb; padding: 0.1rem 0.35rem; border-radius: $radius-sm; color: $text-muted; }
+.priority-badge { font-size: 0.8rem; }
+
+.deadline-badge {
+    font-size: 0.7rem;
+    color: $text-light;
+
+    &.overdue {
+        color: $color-danger;
+        font-weight: 600;
+    }
+}
+
+.comment-badge {
+    font-size: 0.7rem;
+    color: $color-info;
+    background: $color-info-bg;
+    padding: 0.1rem 0.35rem;
+    border-radius: $radius-sm;
+}
+
+.item-chevron {
+    font-size: 0.55rem;
+    color: $text-dim;
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+    transition: color 0.15s;
+}
+
+// Expanded panel
+.item-expanded {
+    background: $bg-section;
+    padding: 0.8rem 1rem 0.8rem 2.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    animation: slideDown 0.15s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; max-height: 0; transform: translateY(-4px); }
+    to { opacity: 1; max-height: 800px; transform: translateY(0); }
+}
+
+.item-detail-section {
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.overview-empty {
+    text-align: center;
+    padding: 3rem;
+    color: $text-lighter;
+}
+
+// Shared form styles
+.p-btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: $radius;
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-decoration: none;
+}
+
+.p-btn-primary {
+    background: $accent;
+    color: white;
+
+    &:hover {
+        background: $accent-hover;
+    }
+}
+
+.p-input {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    border: 1.5px solid $border-input;
+    border-radius: $radius;
+    font-size: 0.9rem;
+    font-family: inherit;
+    background: $bg-white;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+
+    &:focus {
+        outline: none;
+        border-color: $accent;
+        box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+    }
+}
+
+.p-input-sm {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+// Responsive
+@media (max-width: 768px) {
+    .overview-container {
+        padding: 1rem;
+    }
+
+    .overview-header {
+        flex-direction: column;
+        align-items: flex-start;
+
+        h1 {
+            font-size: 1.3rem;
+        }
+    }
+
+    .overview-stats {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .stat-badge {
+        font-size: 0.72rem;
+        padding: 0.2rem 0.45rem;
+    }
+
+    .overview-filters {
+        flex-direction: column;
+
+        .p-input-sm {
+            min-width: 0;
+            width: 100%;
+
+            &:first-child {
+                min-width: 0;
+            }
+        }
+    }
+
+    .item-row {
+        flex-wrap: wrap;
+        padding: 0.6rem 0.8rem;
+        position: relative;
+        padding-right: 1.8rem;
+    }
+
+    .item-content {
+        white-space: normal;
+        min-width: 0;
+        flex: 1 1 0;
+    }
+
+    .item-badges {
+        flex-basis: 100%;
+        justify-content: flex-start;
+        gap: 0.3rem;
+        padding-left: 0;
+        margin-top: 0.2rem;
+
+        .cat-badge,
+        .note-badge {
+            display: inline;
+            font-size: 0.68rem;
+        }
+    }
+
+    .note-badge {
+        max-width: 80px;
+    }
+
+    .item-chevron {
+        position: absolute;
+        top: 0.7rem;
+        right: 0.6rem;
+    }
+
+    .item-expanded {
+        padding: 0.8rem;
+        padding-left: 1rem;
+    }
+}
+

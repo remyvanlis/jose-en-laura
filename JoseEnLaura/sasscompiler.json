@@ -1,0 +1,6 @@
+﻿{
+  "Arguments": "--style=expanded",
+  "GenerateScopedCss": true,
+  "ScopedCssFolders": ["Components"]
+}
+

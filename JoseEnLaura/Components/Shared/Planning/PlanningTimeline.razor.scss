@@ -1,0 +1,235 @@
+﻿@use 'variables' as *;
+
+/* ========================
+   TIMELINE COMPONENT
+   ======================== */
+.timeline-view {
+    flex: 1;
+    padding: 2rem 2.5rem;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+
+    h2 { font-family: $font-serif; font-size: 1.8rem; margin: 0; }
+}
+
+.timeline-empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: $text-lighter;
+}
+
+.timeline-track {
+    position: relative;
+    padding-left: 40px;
+
+    &::before {
+        content: '';
+        position: absolute;
+        left: 18px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: $border-input;
+    }
+}
+
+.timeline-date-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 1rem 0 0.5rem;
+    position: relative;
+
+    span {
+        font-family: $font-serif;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: $text-heading;
+        text-transform: capitalize;
+    }
+}
+
+.timeline-date-dot {
+    position: absolute;
+    left: -28px;
+    width: 14px;
+    height: 14px;
+    background: $accent;
+    border-radius: $radius-full;
+    border: 3px solid $bg-page;
+}
+
+.timeline-item {
+    display: flex;
+    gap: 1rem;
+    padding: 0.8rem 1rem;
+    background: $bg-white;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+
+    &::before {
+        content: '';
+        position: absolute;
+        left: -28px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        background: $bg-white;
+        border: 2px solid $text-dim;
+        border-radius: $radius-full;
+        transform: translateY(-50%);
+    }
+
+    &:hover { border-color: $accent; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+    &.overdue { border-color: #fca5a5; background: #fff5f5; }
+    &.item-done { opacity: 0.6; }
+}
+
+.timeline-time {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: $accent;
+    min-width: 50px;
+    flex-shrink: 0;
+}
+
+.timeline-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.timeline-title {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.timeline-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: $radius-full;
+    flex-shrink: 0;
+}
+
+.timeline-category,
+.timeline-assignee {
+    font-size: 0.75rem;
+    color: $text-lighter;
+}
+
+.timeline-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    span { font-size: 0.7rem; color: $text-lighter; }
+}
+
+.timeline-progress-bar {
+    flex: 1;
+    height: 4px;
+    background: #eee;
+    border-radius: 2px;
+    max-width: 120px;
+}
+
+.timeline-progress-fill {
+    height: 100%;
+    background: $color-success;
+    border-radius: 2px;
+}
+
+.timeline-overdue-badge {
+    font-size: 0.75rem;
+    color: $color-danger;
+    font-weight: 600;
+}
+
+.timeline-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.timeline-section { margin-bottom: 1.5rem; }
+
+.timeline-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: $text-secondary;
+    padding: 0.5rem 0;
+    margin-bottom: 0.3rem;
+    border-bottom: 1px solid $border;
+}
+
+.timeline-section-icon { font-size: 0.9rem; }
+.timeline-section-overdue .timeline-section-header { color: $color-danger; }
+.timeline-section-done .timeline-section-header { color: $color-success; }
+.timeline-section-unplanned .timeline-section-header { color: #94a3b8; }
+
+.timeline-today {
+    background: $accent-bg;
+    border-radius: $radius;
+    padding: 0.5rem 0.8rem !important;
+
+    span { font-weight: 700; color: $accent; }
+}
+
+.timeline-progress-text {
+    font-size: 0.7rem;
+    color: $text-lighter;
+}
+
+// Shared button styles
+.p-btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: $radius;
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.p-btn-sm { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+.p-btn-ghost { background: transparent; color: $text-muted; &:hover { background: rgba(0, 0, 0, 0.05); } }
+
+// Mobile
+@media (max-width: 768px) {
+    .timeline-view {
+        padding: 1rem;
+        padding-top: 3rem;
+    }
+
+    .timeline-header h2 { font-size: 1.3rem; }
+    .timeline-track { padding-left: 30px; }
+
+    .timeline-item {
+        flex-direction: column;
+        gap: 0.3rem;
+        padding: 0.6rem 0.8rem;
+    }
+}
+

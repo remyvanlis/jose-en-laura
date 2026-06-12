@@ -1,0 +1,640 @@
+@page "/planning"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@using System.Text.Json
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject ProtectedLocalStorage LocalStorage
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Planning — José & Laura</PageTitle>
+
+<div class="planning-page">
+    @if (_isBusy)
+    {
+        <div class="planning-overlay">
+            <div class="planning-spinner"></div>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="planning-login-wrap">
+            <div class="planning-login-card">
+                <h1>?? Planning</h1>
+                <p>Laden...</p>
+            </div>
+        </div>
+    }
+    else if (_currentUser is null)
+    {
+        <PlanningLoginCard AdminUsers="_adminUsers" OnLoggedIn="OnLoggedIn" />
+    }
+    else
+    {
+        <div class="planning-layout">
+            <!-- Mobile hamburger button -->
+            @if (_sidebarCollapsed)
+            {
+                <button class="mobile-menu-btn" @onclick="() => _sidebarCollapsed = false">?</button>
+            }
+
+            <!-- Mobile sidebar backdrop -->
+            @if (!_sidebarCollapsed)
+            {
+                <div class="sidebar-backdrop" @onclick="() => _sidebarCollapsed = true"></div>
+            }
+
+            <!-- ============ SIDEBAR ============ -->
+            <PlanningSidebar Categories="_categories"
+                             AllNotes="_allNotes"
+                             AdminUsers="_adminUsers"
+                             SelectedNoteId="_selectedNoteId"
+                             SelectedCategoryId="_selectedCategoryId"
+                             Collapsed="_sidebarCollapsed"
+                             NoteVisits="_noteVisits"
+                             MentionedNoteIds="_mentionedNoteIds"
+                             CollapsedCategories="_collapsedCategories"
+                             SearchQuery="@_searchQuery"
+                             FilterStatus="@_filterStatus"
+                             FilterAssignee="_filterAssignee"
+                             OnToggleCollapsed="() => _sidebarCollapsed = !_sidebarCollapsed"
+                             OnNoteSelected="SelectNote"
+                             OnAddNote="AddNote"
+                             OnToggleCategory="ToggleCategory"
+                             OnEditCategory="StartEditCategory"
+                             OnDeleteCategory="DeleteCategory"
+                             OnCategoryAdded="SaveNewCategory"
+                             OnSearchChanged="s => { _searchQuery = s; }"
+                             OnFilterStatusChanged="s => { _filterStatus = s; }"
+                             OnFilterAssigneeChanged="v => { _filterAssignee = v; }" />
+
+            <!-- ============ MAIN CONTENT ============ -->
+            <main class="planning-main">
+                @if (_activeView == "timeline")
+                {
+                    <PlanningTimeline AllNotes="_allNotes"
+                                      OnNoteSelected="SelectNote"
+                                      OnClose="SwitchToOverview" />
+                }
+                else if (_selectedNote is not null)
+                {
+                    <PlanningNoteEditor Note="_selectedNote"
+                                         CurrentUser="_currentUser"
+                                         AdminUsers="_adminUsers"
+                                         OnClose="CloseNote"
+                                         OnSaved="OnNoteSaved"
+                                         OnDeleted="OnNoteDeleted"
+                                         OnTimelineRequested='() => { _activeView = "timeline"; }' />
+                }
+                else
+                {
+                    <!-- OVERVIEW (embedded) -->
+                    <div class="planning-embedded-overview">
+                        @{
+                            var pinnedNote = _allNotes.FirstOrDefault(n => n.IsPinnedInfo);
+                        }
+                        @if (pinnedNote is not null)
+                        {
+                            <div class="pinned-info-card" @onclick="() => SelectNote(pinnedNote.Id)">
+                                <div class="pinned-info-header">
+                                    <span>?? Algemene info</span>
+                                    <span class="pinned-info-title">@pinnedNote.Title</span>
+                                </div>
+                                <div class="pinned-info-content">
+                                    @foreach (var block in pinnedNote.Blocks.OrderBy(b => b.SortOrder).Take(5))
+                                    {
+                                        @if (!string.IsNullOrWhiteSpace(block.Content))
+                                        {
+                                            <p class="pinned-info-line @(block.Type == BlockType.Heading ? "pinned-heading" : "")">
+                                                @if (block.Type == BlockType.Checkbox)
+                                                {
+                                                    <span>@(block.IsChecked ? "?" : "?")</span>
+                                                }
+                                                @block.Content
+                                            </p>
+                                        }
+                                    }
+                                    @if (pinnedNote.Blocks.Count > 5)
+                                    {
+                                        <p class="pinned-info-more">+ @(pinnedNote.Blocks.Count - 5) meer...</p>
+                                    }
+                                </div>
+                                @if (IsNoteUnseen(pinnedNote))
+                                {
+                                    <span class="pinned-unseen-badge">Nieuw</span>
+                                }
+                            </div>
+                        }
+
+                        <PlanningOverviewEmbed AdminUsers="_adminUsers" CurrentUser="_currentUser!" DbFactory="DbFactory"
+                                               BlockVisits="_blockVisits" MentionedBlockIds="_mentionedBlockIds"
+                                               RecentActivity="_recentActivity"
+                                               OnActivityClick="SelectNote" />
+                    </div>
+                }
+            </main>
+        </div>
+
+        <!-- Category edit modal -->
+        @if (_editingCategory is not null)
+        {
+            <div class="modal-backdrop" @onclick="() => _editingCategory = null">
+                <div class="modal-card" @onclick:stopPropagation>
+                    <h3>Categorie bewerken</h3>
+                    <div class="form-group">
+                        <label>Naam</label>
+                        <input type="text" class="p-input" @bind="_editCategoryName" />
+                    </div>
+                    <div class="form-group">
+                        <label>Icoon (emoji)</label>
+                        <input type="text" class="p-input" @bind="_editCategoryIcon" style="max-width: 80px;" />
+                    </div>
+                    <div class="form-group">
+                        <label>Kleur</label>
+                        <input type="color" class="p-input" @bind="_editCategoryColor" style="max-width: 80px; height: 40px;" />
+                    </div>
+                    <div class="modal-actions">
+                        <button class="p-btn p-btn-primary" @onclick="SaveCategoryEdit">Opslaan</button>
+                        <button class="p-btn p-btn-ghost" @onclick="() => _editingCategory = null">Annuleren</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- View mode switch (fixed bottom-right) -->
+        <div class="view-switch">
+            <button class="view-btn @(_activeView == "overview" && _selectedNote is null ? "active" : "")" @onclick="SwitchToOverview">?? Overzicht</button>
+            <button class="view-btn @(_activeView == "timeline" ? "active" : "")" @onclick='() => { _activeView = "timeline"; }'>?? Tijdlijn</button>
+        </div>
+    }
+</div>
+
+@code {
+    // =============================================
+    //  STATE
+    // =============================================
+    private const string SessionKey = "admin_session";
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private List<AdminUser> _adminUsers = [];
+    private AdminUser? _currentUser;
+
+    // Layout
+    private bool _sidebarCollapsed;
+    private string _activeView = "overview";
+
+    // Data
+    private List<PlanningCategory> _categories = [];
+    private List<PlanningNote> _allNotes = [];
+    private int? _selectedCategoryId;
+    private int? _selectedNoteId;
+    private PlanningNote? _selectedNote;
+    private HashSet<int> _collapsedCategories = [];
+
+    // Search & filter
+    private string _searchQuery = "";
+    private string _filterStatus = "";
+    private int _filterAssignee;
+
+    // Category editing
+    private PlanningCategory? _editingCategory;
+    private string _editCategoryName = "";
+    private string _editCategoryIcon = "";
+    private string _editCategoryColor = "";
+
+    // Collaboration: unseen tracking & mentions
+    private Dictionary<int, DateTime> _noteVisits = [];
+    private Dictionary<int, DateTime> _blockVisits = [];
+    private HashSet<int> _mentionedNoteIds = [];
+    private HashSet<int> _mentionedBlockIds = [];
+    private List<PlanningAuditLog> _recentActivity = [];
+
+    // Periodic refresh
+    private System.Timers.Timer? _refreshTimer;
+
+    // =============================================
+    //  LIFECYCLE
+    // =============================================
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _adminUsers = await db.AdminUsers.ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var result = await LocalStorage.GetAsync<AdminSession>(SessionKey);
+            if (result is { Success: true, Value: not null })
+            {
+                var session = result.Value;
+                if (session.ExpiresUtc > DateTime.UtcNow)
+                {
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var user = await db.AdminUsers.FindAsync(session.UserId);
+                    if (user is not null)
+                    {
+                        _currentUser = user;
+                        await LoadAllData();
+                    }
+                }
+                else
+                {
+                    await LocalStorage.DeleteAsync(SessionKey);
+                }
+            }
+        }
+        catch { }
+
+        _isLoading = false;
+        StateHasChanged();
+
+        if (_currentUser is not null)
+            StartRefreshTimer();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    private void StartRefreshTimer()
+    {
+        _refreshTimer = new System.Timers.Timer(30000);
+        _refreshTimer.AutoReset = true;
+        _refreshTimer.Elapsed += async (_, _) =>
+        {
+            // Skip refresh when the user is looking at a specific note or timeline
+            // to avoid re-render races that wipe in-progress input fields.
+            if (_selectedNote is not null || _activeView == "timeline") return;
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    // Only refresh sidebar data (categories + notes list).
+                    // Do NOT call StateHasChanged — the overview embed has its
+                    // own local state (search, filters, text inputs) that would
+                    // be disrupted by a parent re-render mid-typing.
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    _categories = await db.PlanningCategories.OrderBy(c => c.SortOrder).ToListAsync();
+                    _allNotes = await db.PlanningNotes
+                        .Include(n => n.Category)
+                        .Include(n => n.AssignedTo)
+                        .Include(n => n.CreatedBy)
+                        .Include(n => n.UpdatedBy)
+                        .Include(n => n.Blocks.OrderBy(b => b.SortOrder))
+                        .OrderBy(n => n.SortOrder)
+                        .ToListAsync();
+                    // Sidebar re-renders because its parameters changed (reference equality).
+                    // The overview embed will NOT re-run OnParametersSetAsync because we
+                    // intentionally do NOT replace _blockVisits / _recentActivity here.
+                    StateHasChanged();
+                });
+            }
+            catch { }
+        };
+        _refreshTimer.Start();
+    }
+
+    // =============================================
+    //  AUTH
+    // =============================================
+    private async Task OnLoggedIn(AdminUser user)
+    {
+        _currentUser = user;
+        await LocalStorage.SetAsync(SessionKey, new AdminSession(user.Id, DateTime.UtcNow.AddDays(7)));
+        await LoadAllData();
+        StartRefreshTimer();
+    }
+
+    // =============================================
+    //  DATA LOADING
+    // =============================================
+    private async Task LoadAllData()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _categories = await db.PlanningCategories.OrderBy(c => c.SortOrder).ToListAsync();
+        _allNotes = await db.PlanningNotes
+            .Include(n => n.Category)
+            .Include(n => n.AssignedTo)
+            .Include(n => n.CreatedBy)
+            .Include(n => n.UpdatedBy)
+            .Include(n => n.Blocks.OrderBy(b => b.SortOrder))
+            .OrderBy(n => n.SortOrder)
+            .ToListAsync();
+
+        if (_currentUser is not null)
+        {
+            // Wrap collaboration queries in individual try-catches so a failure
+            // in one (e.g. duplicate key in ToDictionary) doesn't prevent the rest
+            // from working. Categories + notes are the critical data.
+            try
+            {
+                _noteVisits = await db.UserNoteVisits
+                    .Where(v => v.UserId == _currentUser.Id)
+                    .GroupBy(v => v.NoteId)
+                    .Select(g => new { NoteId = g.Key, LastVisitedAt = g.Max(v => v.LastVisitedAt) })
+                    .ToDictionaryAsync(v => v.NoteId, v => v.LastVisitedAt);
+            }
+            catch { _noteVisits = []; }
+
+            try
+            {
+                _blockVisits = await db.UserBlockVisits
+                    .Where(v => v.UserId == _currentUser.Id)
+                    .GroupBy(v => v.BlockId)
+                    .Select(g => new { BlockId = g.Key, LastVisitedAt = g.Max(v => v.LastVisitedAt) })
+                    .ToDictionaryAsync(v => v.BlockId, v => v.LastVisitedAt);
+            }
+            catch { _blockVisits = []; }
+
+            try
+            {
+                var allBlockIds = _allNotes.SelectMany(n => n.Blocks).Select(b => b.Id).ToList();
+                if (allBlockIds.Count > 0)
+                {
+                    var mentionComments = await db.PlanningComments
+                        .Where(c => allBlockIds.Contains(c.BlockId) && c.MentionedUserIds != null)
+                        .Select(c => new { c.BlockId, c.MentionedUserIds, c.CreatedAt })
+                        .ToListAsync();
+
+                    var noteBlockMap = _allNotes.SelectMany(n => n.Blocks.Select(b => new { b.Id, NoteId = n.Id }))
+                        .ToDictionary(x => x.Id, x => x.NoteId);
+
+                    _mentionedBlockIds = [];
+                    _mentionedNoteIds = [];
+                    foreach (var comment in mentionComments)
+                    {
+                        var mentionIds = PlanningHelpers.DeserializeMentionIds(comment.MentionedUserIds);
+                        if (!mentionIds.Contains(_currentUser.Id)) continue;
+                        if (_blockVisits.TryGetValue(comment.BlockId, out var lastBlockVisit) && lastBlockVisit >= comment.CreatedAt)
+                            continue;
+                        _mentionedBlockIds.Add(comment.BlockId);
+                        if (noteBlockMap.TryGetValue(comment.BlockId, out var noteId))
+                            _mentionedNoteIds.Add(noteId);
+                    }
+                }
+                else
+                {
+                    _mentionedBlockIds = [];
+                    _mentionedNoteIds = [];
+                }
+            }
+            catch
+            {
+                _mentionedBlockIds = [];
+                _mentionedNoteIds = [];
+            }
+
+            try
+            {
+                _recentActivity = await db.PlanningAuditLogs
+                    .Include(a => a.User)
+                    .Include(a => a.Note)
+                    .OrderByDescending(a => a.Timestamp)
+                    .Take(20)
+                    .ToListAsync();
+            }
+            catch { _recentActivity = []; }
+        }
+    }
+
+    // =============================================
+    //  CATEGORY MANAGEMENT
+    // =============================================
+    private void ToggleCategory(int catId)
+    {
+        if (_collapsedCategories.Contains(catId))
+            _collapsedCategories.Remove(catId);
+        else
+            _collapsedCategories.Add(catId);
+    }
+
+    private async Task SaveNewCategory(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        _isBusy = true; StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = await db.PlanningCategories.CountAsync() + 1;
+            db.PlanningCategories.Add(new PlanningCategory
+            {
+                Name = name.Trim(), Icon = "??", Color = "#6c757d", SortOrder = nextOrder
+            });
+            await db.SaveChangesAsync();
+            await LoadAllData();
+        }
+        finally { _isBusy = false; }
+    }
+
+    private void StartEditCategory(PlanningCategory cat)
+    {
+        _editingCategory = cat;
+        _editCategoryName = cat.Name;
+        _editCategoryIcon = cat.Icon ?? "??";
+        _editCategoryColor = cat.Color ?? "#6c757d";
+    }
+
+    private async Task SaveCategoryEdit()
+    {
+        if (_editingCategory is null || string.IsNullOrWhiteSpace(_editCategoryName)) return;
+        _isBusy = true; StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var cat = await db.PlanningCategories.FindAsync(_editingCategory.Id);
+            if (cat is not null)
+            {
+                cat.Name = _editCategoryName.Trim();
+                cat.Icon = _editCategoryIcon;
+                cat.Color = _editCategoryColor;
+                await db.SaveChangesAsync();
+            }
+            _editingCategory = null;
+            await LoadAllData();
+        }
+        finally { _isBusy = false; }
+    }
+
+    private async Task DeleteCategory(int catId)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Categorie en alle bijbehorende notities verwijderen? Dit kan niet ongedaan worden gemaakt.");
+        if (!confirmed) return;
+        _isBusy = true; StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var noteIds = await db.PlanningNotes.Where(n => n.CategoryId == catId).Select(n => n.Id).ToListAsync();
+            if (noteIds.Count > 0)
+            {
+                var blockIds = await db.PlanningBlocks.Where(b => noteIds.Contains(b.NoteId)).Select(b => b.Id).ToListAsync();
+                if (blockIds.Count > 0)
+                    await db.PlanningComments.Where(c => blockIds.Contains(c.BlockId)).ExecuteDeleteAsync();
+                await db.PlanningBlocks.Where(b => noteIds.Contains(b.NoteId)).ExecuteDeleteAsync();
+                await db.PlanningAuditLogs.Where(a => noteIds.Contains(a.NoteId)).ExecuteDeleteAsync();
+                await db.PlanningNoteVersions.Where(v => noteIds.Contains(v.NoteId)).ExecuteDeleteAsync();
+                await db.PlanningNotes.Where(n => n.CategoryId == catId).ExecuteDeleteAsync();
+            }
+            await db.PlanningCategories.Where(c => c.Id == catId).ExecuteDeleteAsync();
+
+            if (_selectedNote?.CategoryId == catId)
+            {
+                _selectedNote = null;
+                _selectedNoteId = null;
+            }
+            await LoadAllData();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Fout bij verwijderen: {ex.Message}");
+        }
+        finally { _isBusy = false; }
+    }
+
+    // =============================================
+    //  NOTE MANAGEMENT
+    // =============================================
+    private async Task AddNote(int categoryId)
+    {
+        if (_currentUser is null) return;
+        _isBusy = true; StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = await db.PlanningNotes.Where(n => n.CategoryId == categoryId).CountAsync() + 1;
+            var note = new PlanningNote
+            {
+                CategoryId = categoryId, Title = "Nieuwe notitie", SortOrder = nextOrder,
+                CreatedById = _currentUser.Id, UpdatedById = _currentUser.Id, CurrentVersion = 1
+            };
+            db.PlanningNotes.Add(note);
+            await db.SaveChangesAsync();
+
+            db.PlanningBlocks.Add(new PlanningBlock { NoteId = note.Id, Type = BlockType.Text, Content = "", SortOrder = 1 });
+            db.PlanningNoteVersions.Add(new PlanningNoteVersion
+            {
+                NoteId = note.Id, VersionNumber = 1,
+                SnapshotJson = JsonSerializer.Serialize(new { Title = note.Title, Blocks = new[] { new { Type = "Text", Content = "", IsChecked = false, SortOrder = 1, IndentLevel = 0 } } }),
+                Title = note.Title, Status = note.Status, CreatedById = _currentUser.Id
+            });
+            db.PlanningAuditLogs.Add(new PlanningAuditLog { NoteId = note.Id, Action = "created", Details = $"Notitie aangemaakt: {note.Title}", UserId = _currentUser.Id });
+            await db.SaveChangesAsync();
+            await LoadAllData();
+            await SelectNote(note.Id);
+        }
+        finally { _isBusy = false; }
+    }
+
+    private async Task SelectNote(int noteId)
+    {
+        _selectedNoteId = noteId;
+        _selectedCategoryId = _allNotes.FirstOrDefault(n => n.Id == noteId)?.CategoryId;
+        _activeView = "overview";
+
+        // Only collapse sidebar on mobile
+        try
+        {
+            var isMobile = await JS.InvokeAsync<bool>("eval", "window.innerWidth < 768");
+            if (isMobile) _sidebarCollapsed = true;
+        }
+        catch { _sidebarCollapsed = true; }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _selectedNote = await db.PlanningNotes
+            .Include(n => n.Category).Include(n => n.AssignedTo)
+            .Include(n => n.CreatedBy).Include(n => n.UpdatedBy)
+            .Include(n => n.Blocks.OrderBy(b => b.SortOrder))
+            .FirstOrDefaultAsync(n => n.Id == noteId);
+
+        if (_currentUser is not null)
+        {
+            try
+            {
+                var visit = await db.UserNoteVisits.FirstOrDefaultAsync(v => v.UserId == _currentUser.Id && v.NoteId == noteId);
+                if (visit is not null) visit.LastVisitedAt = DateTime.UtcNow;
+                else db.UserNoteVisits.Add(new UserNoteVisit { UserId = _currentUser.Id, NoteId = noteId, LastVisitedAt = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+                _noteVisits[noteId] = DateTime.UtcNow;
+                _mentionedNoteIds.Remove(noteId);
+
+                var noteBlocks = _allNotes.FirstOrDefault(n => n.Id == noteId)?.Blocks;
+                if (noteBlocks is not null)
+                {
+                    foreach (var block in noteBlocks)
+                    {
+                        _mentionedBlockIds.Remove(block.Id);
+                        var blockVisit = await db.UserBlockVisits.FirstOrDefaultAsync(v => v.UserId == _currentUser.Id && v.BlockId == block.Id);
+                        if (blockVisit is not null) blockVisit.LastVisitedAt = DateTime.UtcNow;
+                        else db.UserBlockVisits.Add(new UserBlockVisit { UserId = _currentUser.Id, BlockId = block.Id, LastVisitedAt = DateTime.UtcNow });
+                        _blockVisits[block.Id] = DateTime.UtcNow;
+                    }
+                    await db.SaveChangesAsync();
+                }
+            }
+            catch { }
+        }
+    }
+
+    private async Task CloseNote()
+    {
+        _selectedNote = null;
+        _selectedNoteId = null;
+        _sidebarCollapsed = false;
+        await LoadAllData();
+    }
+
+    private async Task OnNoteSaved()
+    {
+        // Do a lightweight sidebar data refresh without triggering a full re-render
+        // that would cause PlanningNoteEditor to reload and wipe in-progress edits.
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _allNotes = await db.PlanningNotes
+                .Include(n => n.Category)
+                .Include(n => n.AssignedTo)
+                .Include(n => n.CreatedBy)
+                .Include(n => n.UpdatedBy)
+                .Include(n => n.Blocks.OrderBy(b => b.SortOrder))
+                .OrderBy(n => n.SortOrder)
+                .ToListAsync();
+        }
+        catch { }
+    }
+
+    private async Task OnNoteDeleted()
+    {
+        _selectedNote = null;
+        _selectedNoteId = null;
+        _sidebarCollapsed = false;
+        await LoadAllData();
+    }
+
+    private async Task SwitchToOverview()
+    {
+        _activeView = "overview";
+        _selectedNote = null;
+        _selectedNoteId = null;
+        _sidebarCollapsed = false;
+        await LoadAllData();
+    }
+
+    // =============================================
+    //  HELPERS
+    // =============================================
+    private bool IsNoteUnseen(PlanningNote note)
+    {
+        if (!_noteVisits.TryGetValue(note.Id, out var lastVisit)) return true;
+        return note.UpdatedAt > lastVisit;
+    }
+
+    private sealed record AdminSession(int UserId, DateTime ExpiresUtc);
+}

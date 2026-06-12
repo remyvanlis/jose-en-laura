@@ -1,0 +1,238 @@
+@using JoseEnLaura.Data.Models
+
+<div class="timeline-view">
+    <div class="timeline-header">
+        <h2>📅 Tijdlijn</h2>
+        <button class="p-btn p-btn-sm p-btn-ghost" @onclick="() => OnClose.InvokeAsync()">← Terug naar overzicht</button>
+    </div>
+
+    @if (_timelineEntries.Count == 0 && _unplanned.Count == 0)
+    {
+        <div class="timeline-empty">
+            <p>Nog geen items met deadlines. Stel een deadline in op een notitie of taak om deze hier te zien.</p>
+        </div>
+    }
+    else
+    {
+        <div class="timeline-track">
+            @if (_overdueEntries.Count > 0)
+            {
+                <div class="timeline-section timeline-section-overdue">
+                    <div class="timeline-section-header">
+                        <span class="timeline-section-icon">🔴</span>
+                        <span>Achterstallig (@_overdueEntries.Count)</span>
+                    </div>
+                    @foreach (var entry in _overdueEntries)
+                    {
+                        var capturedEntry = entry;
+                        var daysLate = (int)(DateTime.UtcNow - entry.Deadline!.Value).TotalDays;
+                        <div class="timeline-item overdue" @onclick="() => OnNoteSelected.InvokeAsync(capturedEntry.NoteId)">
+                            <div class="timeline-time">@entry.Deadline.Value.ToString("dd MMM")</div>
+                            <div class="timeline-content">
+                                <div class="timeline-title">@entry.Title</div>
+                                <div class="timeline-meta-row">
+                                    @if (entry.CategoryName is not null)
+                                    {
+                                        <span class="timeline-category">@entry.CategoryIcon @entry.CategoryName</span>
+                                    }
+                                    @if (entry.AssigneeName is not null)
+                                    {
+                                        <span class="timeline-assignee">👤 @entry.AssigneeName</span>
+                                    }
+                                    <span class="timeline-overdue-badge">@daysLate @(daysLate == 1 ? "dag" : "dagen") te laat</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @{
+                string? currentDateGroup = null;
+            }
+            @foreach (var entry in _upcomingEntries)
+            {
+                var capturedEntry = entry;
+                var dateStr = entry.Deadline!.Value.ToString("dddd d MMMM yyyy");
+                var isToday = entry.Deadline.Value.Date == DateTime.UtcNow.Date;
+                @if (dateStr != currentDateGroup)
+                {
+                    currentDateGroup = dateStr;
+                    <div class="timeline-date-header @(isToday ? "timeline-today" : "")">
+                        <div class="timeline-date-dot"></div>
+                        <span>@(isToday ? "📍 Vandaag — " : "")@dateStr</span>
+                    </div>
+                }
+                <div class="timeline-item" @onclick="() => OnNoteSelected.InvokeAsync(capturedEntry.NoteId)">
+                    <div class="timeline-time">@entry.Deadline.Value.ToString("HH:mm")</div>
+                    <div class="timeline-content">
+                        <div class="timeline-title">@entry.Title</div>
+                        <div class="timeline-meta-row">
+                            @if (entry.CategoryName is not null)
+                            {
+                                <span class="timeline-category">@entry.CategoryIcon @entry.CategoryName</span>
+                            }
+                            @if (entry.AssigneeName is not null)
+                            {
+                                <span class="timeline-assignee">👤 @entry.AssigneeName</span>
+                            }
+                            @if (entry.Total > 0)
+                            {
+                                <span class="timeline-progress-text">@entry.Percent% (@entry.Done/@entry.Total)</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (_doneEntries.Count > 0)
+            {
+                <div class="timeline-section timeline-section-done">
+                    <div class="timeline-section-header" @onclick="() => _showDone = !_showDone" style="cursor: pointer;">
+                        <span class="timeline-section-icon">✅</span>
+                        <span>Afgerond (@_doneEntries.Count)</span>
+                        <span style="margin-left: auto; font-size: 0.7rem; color: #aaa;">@(_showDone ? "▼" : "▶")</span>
+                    </div>
+                    @if (_showDone)
+                    {
+                        @foreach (var entry in _doneEntries)
+                        {
+                            var capturedEntry = entry;
+                            <div class="timeline-item item-done" @onclick="() => OnNoteSelected.InvokeAsync(capturedEntry.NoteId)">
+                                <div class="timeline-time">@entry.Deadline!.Value.ToString("dd MMM")</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title" style="text-decoration: line-through; opacity: 0.6;">@entry.Title</div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_unplanned.Count > 0)
+            {
+                <div class="timeline-section timeline-section-unplanned">
+                    <div class="timeline-section-header">
+                        <span class="timeline-section-icon">📋</span>
+                        <span>Ongepland (@_unplanned.Count)</span>
+                    </div>
+                    @foreach (var entry in _unplanned)
+                    {
+                        var capturedEntry = entry;
+                        <div class="timeline-item" @onclick="() => OnNoteSelected.InvokeAsync(capturedEntry.NoteId)">
+                            <div class="timeline-time" style="color: #aaa;">—</div>
+                            <div class="timeline-content">
+                                <div class="timeline-title">@entry.Title</div>
+                                <div class="timeline-meta-row">
+                                    @if (entry.CategoryName is not null)
+                                    {
+                                        <span class="timeline-category">@entry.CategoryIcon @entry.CategoryName</span>
+                                    }
+                                    @if (entry.AssigneeName is not null)
+                                    {
+                                        <span class="timeline-assignee">👤 @entry.AssigneeName</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<PlanningNote> AllNotes { get; set; } = [];
+    [Parameter] public EventCallback<int> OnNoteSelected { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<TimelineEntry> _timelineEntries = [];
+    private List<TimelineEntry> _overdueEntries = [];
+    private List<TimelineEntry> _upcomingEntries = [];
+    private List<TimelineEntry> _doneEntries = [];
+    private List<TimelineEntry> _unplanned = [];
+    private bool _showDone;
+
+    protected override void OnParametersSet()
+    {
+        _timelineEntries = GetTimelineEntries();
+        _overdueEntries = _timelineEntries.Where(e => e.IsOverdue).ToList();
+        _upcomingEntries = _timelineEntries.Where(e => !e.IsOverdue && !e.IsDone).ToList();
+        _doneEntries = _timelineEntries.Where(e => e.IsDone).ToList();
+        _unplanned = GetUnplannedEntries();
+    }
+
+    private List<TimelineEntry> GetTimelineEntries()
+    {
+        var entries = new List<TimelineEntry>();
+
+        foreach (var note in AllNotes.Where(n => n.Deadline.HasValue))
+        {
+            var progress = PlanningHelpers.GetNoteProgress(note);
+            var isDone = note.Status == NoteStatus.Done;
+            var isOverdue = note.Deadline!.Value < DateTime.UtcNow && !isDone;
+            entries.Add(new TimelineEntry
+            {
+                Title = note.Title, Deadline = note.Deadline, CategoryName = note.Category?.Name,
+                CategoryIcon = note.Category?.Icon, CategoryColor = note.Category?.Color,
+                AssigneeName = note.AssignedTo?.Name, IsDone = isDone, IsOverdue = isOverdue,
+                NoteId = note.Id, Percent = progress.Percent, Done = progress.Done, Total = progress.Total
+            });
+        }
+
+        foreach (var note in AllNotes)
+        {
+            foreach (var block in note.Blocks.Where(b => b.Deadline.HasValue))
+            {
+                if (note.Deadline.HasValue && block.Deadline!.Value.Date == note.Deadline.Value.Date) continue;
+                var isDone = block.IsChecked || block.ItemStatus == BlockItemStatus.Done;
+                var isOverdue = block.Deadline!.Value < DateTime.UtcNow && !isDone;
+                entries.Add(new TimelineEntry
+                {
+                    Title = string.IsNullOrWhiteSpace(block.Content) ? note.Title : block.Content,
+                    Deadline = block.Deadline, CategoryName = note.Category?.Name,
+                    CategoryIcon = note.Category?.Icon, CategoryColor = note.Category?.Color,
+                    AssigneeName = block.AssignedTo?.Name ?? note.AssignedTo?.Name,
+                    IsDone = isDone, IsOverdue = isOverdue, NoteId = note.Id
+                });
+            }
+        }
+
+        return entries.OrderBy(e => e.Deadline).ToList();
+    }
+
+    private List<TimelineEntry> GetUnplannedEntries()
+    {
+        var entries = new List<TimelineEntry>();
+        foreach (var note in AllNotes.Where(n => !n.Deadline.HasValue && n.Status != NoteStatus.Done))
+        {
+            var progress = PlanningHelpers.GetNoteProgress(note);
+            entries.Add(new TimelineEntry
+            {
+                Title = note.Title, CategoryName = note.Category?.Name,
+                CategoryIcon = note.Category?.Icon, CategoryColor = note.Category?.Color,
+                AssigneeName = note.AssignedTo?.Name, NoteId = note.Id,
+                Percent = progress.Percent, Done = progress.Done, Total = progress.Total
+            });
+        }
+        return entries;
+    }
+
+    private class TimelineEntry
+    {
+        public string Title { get; set; } = "";
+        public DateTime? Deadline { get; set; }
+        public string? CategoryName { get; set; }
+        public string? CategoryIcon { get; set; }
+        public string? CategoryColor { get; set; }
+        public string? AssigneeName { get; set; }
+        public bool IsDone { get; set; }
+        public bool IsOverdue { get; set; }
+        public int NoteId { get; set; }
+        public int Percent { get; set; }
+        public int Done { get; set; }
+        public int Total { get; set; }
+    }
+}
+

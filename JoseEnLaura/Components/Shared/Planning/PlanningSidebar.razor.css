@@ -1,0 +1,377 @@
+/* ========================
+   SIDEBAR COMPONENT
+   ======================== */
+.planning-sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: white;
+  border-right: 1px solid #eae8e4;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  transition: all 0.3s ease;
+}
+.planning-sidebar.collapsed {
+  width: 50px;
+  min-width: 50px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid #eae8e4;
+}
+.sidebar-header h2 {
+  font-family: "Playfair Display", serif;
+  font-size: 1rem;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.collapsed .sidebar-header h2 {
+  display: none;
+}
+
+.sidebar-toggle {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #888;
+  padding: 3px 6px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.sidebar-toggle:hover {
+  background: #f0f0f0;
+}
+
+.sidebar-search {
+  padding: 0.5rem 0.6rem 0;
+}
+
+.sidebar-filters {
+  padding: 0.35rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sidebar-categories {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.2rem 0;
+}
+
+.sidebar-category {
+  border-bottom: 1px solid #f5f3f0;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.category-header:hover {
+  background: #faf9f7;
+}
+.category-header:hover .category-actions {
+  display: flex;
+}
+.category-header:hover .category-count {
+  display: none;
+}
+
+.category-chevron {
+  font-size: 0.55rem;
+  color: #aaa;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.category-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.category-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-count {
+  font-size: 0.65rem;
+  color: #aaa;
+  background: #f0f0f0;
+  padding: 0px 5px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.category-actions {
+  display: none;
+  gap: 2px;
+}
+
+.cat-btn {
+  background: none;
+  border: none;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 4px;
+  opacity: 0.6;
+}
+.cat-btn:hover {
+  opacity: 1;
+  background: #f0f0f0;
+}
+
+.category-notes {
+  padding: 0 0.3rem 0.2rem 1.2rem;
+}
+
+.sidebar-note {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 1px;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+.sidebar-note:hover {
+  background: #f5f3f0;
+}
+.sidebar-note.selected {
+  background: rgba(196, 149, 106, 0.12);
+  border-left: 3px solid #c4956a;
+}
+.sidebar-note.note-unseen {
+  border-left: 3px solid #3b82f6;
+}
+.sidebar-note.note-unseen.selected {
+  border-left: 3px solid #c4956a;
+}
+
+.note-title-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.note-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.note-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.note-progress-bar {
+  height: 2px;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.note-progress-fill {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.note-progress-text {
+  font-size: 0.6rem;
+  color: #bbb;
+  flex-shrink: 0;
+}
+
+.note-deadline {
+  font-size: 0.6rem;
+  color: #aaa;
+  flex-shrink: 0;
+}
+.note-deadline.overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.unseen-dot {
+  font-size: 0.45rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.mention-badge {
+  font-size: 0.55rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.add-note-btn {
+  background: none;
+  border: none;
+  color: #bbb;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 5px;
+  width: 100%;
+  text-align: left;
+  transition: all 0.15s;
+}
+.add-note-btn:hover {
+  color: #c4956a;
+  background: rgba(196, 149, 106, 0.05);
+}
+
+.sidebar-footer {
+  padding: 0.5rem 0.6rem;
+  border-top: 1px solid #eae8e4;
+}
+
+.add-cat-btn {
+  background: none;
+  border: 1.5px dashed #ddd;
+  color: #999;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 8px;
+  width: 100%;
+  text-align: center;
+  transition: all 0.2s;
+}
+.add-cat-btn:hover {
+  border-color: #c4956a;
+  color: #c4956a;
+}
+
+.add-cat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.add-cat-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.p-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid #e0ddd8;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+.p-input:focus {
+  outline: none;
+  border-color: #c4956a;
+  box-shadow: 0 0 0 3px rgba(196, 149, 106, 0.15);
+}
+
+.p-input-sm {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.p-btn {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.p-btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.p-btn-primary {
+  background: #c4956a;
+  color: white;
+}
+.p-btn-primary:hover {
+  background: #b07d55;
+}
+
+.p-btn-ghost {
+  background: transparent;
+  color: #666;
+}
+.p-btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.p-link-back {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #888;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.p-link-back:hover {
+  color: #c4956a;
+}
+
+@media (max-width: 768px) {
+  .planning-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 200;
+    width: 280px;
+    min-width: 280px;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+    transition: transform 0.25s ease;
+    transform: translateX(0);
+  }
+  .planning-sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 280px;
+    min-width: 280px;
+    box-shadow: none;
+  }
+}
+
+/*# sourceMappingURL=PlanningSidebar.razor.css.map */

@@ -1,0 +1,466 @@
+/* =============================================
+   CHECK-IN PAGE — Mobile-first, touch-optimized
+   For ceremony masters standing with phone in hand
+   ============================================= */
+
+.checkin-page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--color-cream);
+    display: flex;
+    flex-direction: column;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+/* Loading */
+.checkin-loading {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    font-family: var(--font-sans);
+    color: var(--color-terracotta-dark);
+}
+
+.checkin-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--color-cream-dark);
+    border-top-color: var(--color-terracotta);
+    border-radius: 50%;
+    animation: checkin-spin 0.7s linear infinite;
+}
+
+@keyframes checkin-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Login */
+.checkin-login {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-cream-dark) 100%);
+}
+
+.checkin-login-card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--color-white);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 16px 60px rgba(122, 92, 79, 0.12);
+}
+
+.checkin-login-header {
+    background: linear-gradient(135deg, var(--color-terracotta) 0%, var(--color-warm-brown) 100%);
+    color: white;
+    text-align: center;
+    padding: 2rem 1.5rem 1.5rem;
+}
+
+.checkin-login-header h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    margin: 0 0 0.3rem;
+    font-weight: 400;
+}
+
+.checkin-login-header .amp {
+    font-style: italic;
+    opacity: 0.8;
+    font-size: 0.7em;
+}
+
+.checkin-login-header p {
+    font-family: var(--font-sans);
+    font-weight: 300;
+    font-size: 0.85rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin: 0;
+    opacity: 0.8;
+}
+
+.checkin-login-body {
+    padding: 2rem 1.5rem;
+}
+
+.checkin-login-body .form-group {
+    margin-bottom: 1.2rem;
+}
+
+.checkin-login-body label {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-light);
+    margin-bottom: 0.4rem;
+}
+
+.checkin-error {
+    background: #fef2f2;
+    color: #b91c1c;
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    font-family: var(--font-sans);
+}
+
+.checkin-btn-primary {
+    width: 100%;
+    padding: 0.9rem;
+    background: linear-gradient(135deg, var(--color-terracotta) 0%, var(--color-terracotta-dark) 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+}
+
+.checkin-btn-primary:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+}
+
+/* Phase Banner */
+.checkin-phase-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.8rem 1rem;
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.checkin-phase-banner.phase-ceremony {
+    background: linear-gradient(135deg, #c47a5a 0%, #a8603e 100%);
+}
+
+.checkin-phase-banner.phase-dinner {
+    background: linear-gradient(135deg, #264653 0%, #1a3340 100%);
+}
+
+.checkin-phase-banner.phase-party {
+    background: linear-gradient(135deg, #e9c46a 0%, #c5a55a 100%);
+    color: var(--color-text);
+}
+
+.checkin-phase-icon {
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+
+.checkin-phase-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.checkin-phase-label {
+    font-family: var(--font-sans);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+.checkin-phase-name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.checkin-phase-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.18);
+    border-radius: 12px;
+    padding: 0.4rem 0.8rem;
+}
+
+.checkin-phase-count {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.checkin-phase-count-label {
+    font-family: var(--font-sans);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+/* Search */
+.checkin-search-container {
+    position: sticky;
+    top: 68px; /* below phase banner */
+    z-index: 15;
+    padding: 0.6rem 0.8rem;
+    background: var(--color-cream);
+    border-bottom: 1px solid var(--color-cream-dark);
+}
+
+.checkin-search-wrapper {
+    display: flex;
+    align-items: center;
+    background: var(--color-white);
+    border: 2px solid var(--color-cream-dark);
+    border-radius: 14px;
+    padding: 0 0.8rem;
+    transition: border-color 0.2s;
+}
+
+.checkin-search-wrapper:focus-within {
+    border-color: var(--color-terracotta);
+    box-shadow: 0 0 0 3px rgba(196, 122, 90, 0.12);
+}
+
+.checkin-search-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    opacity: 0.5;
+}
+
+.checkin-search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: var(--font-body);
+    font-size: 1.15rem;
+    padding: 0.75rem 0.6rem;
+    color: var(--color-text);
+    min-width: 0;
+}
+
+.checkin-search-input::placeholder {
+    color: var(--color-text-light);
+    opacity: 0.6;
+}
+
+.checkin-search-clear {
+    background: var(--color-cream-dark);
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--color-text-light);
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.checkin-search-clear:active {
+    background: var(--color-cream);
+}
+
+/* Guest List */
+.checkin-list {
+    flex: 1;
+    padding: 0.4rem 0;
+}
+
+.checkin-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    color: var(--color-text-light);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.checkin-empty p {
+    margin: 0.5rem 0 0;
+}
+
+.checkin-guest-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.85rem 1rem;
+    margin: 0 0.5rem 0.35rem;
+    background: var(--color-white);
+    border-radius: 14px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s, border-color 0.15s;
+    min-height: 56px;
+    /* Touch-friendly */
+    -webkit-tap-highlight-color: transparent;
+}
+
+.checkin-guest-row:active {
+    transform: scale(0.98);
+    background: var(--color-cream);
+}
+
+.checkin-guest-row.checked {
+    background: rgba(138, 154, 123, 0.08);
+    border-color: var(--color-sage-light);
+}
+
+.checkin-guest-row.checked:active {
+    background: rgba(138, 154, 123, 0.15);
+}
+
+.checkin-guest-check {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+}
+
+.checkin-guest-check.not-checked {
+    border: 2px solid var(--color-cream-dark);
+    background: var(--color-cream);
+    color: var(--color-text-light);
+}
+
+.checkin-guest-check.is-checked {
+    border: 2px solid var(--color-sage);
+    background: var(--color-sage);
+    color: white;
+    font-weight: 700;
+}
+
+.checkin-guest-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.checkin-guest-name {
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--color-text);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.checkin-guest-meta {
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    color: var(--color-text-light);
+    letter-spacing: 0.04em;
+}
+
+/* Divider between not-checked and checked */
+.checkin-divider {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-sage-dark);
+}
+
+.checkin-divider::before,
+.checkin-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-cream-dark);
+}
+
+.checkin-divider::before {
+    margin-right: 0.8rem;
+}
+
+.checkin-divider::after {
+    margin-left: 0.8rem;
+}
+
+/* Bottom bar */
+.checkin-bottom-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.7rem 1rem;
+    background: var(--color-white);
+    border-top: 1px solid var(--color-cream-dark);
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+}
+
+.checkin-bottom-user {
+    flex: 1;
+    color: var(--color-text-light);
+}
+
+.checkin-bottom-link {
+    color: var(--color-terracotta);
+    text-decoration: none;
+    font-size: 0.8rem;
+}
+
+.checkin-bottom-logout {
+    background: none;
+    border: 1px solid var(--color-cream-dark);
+    border-radius: 8px;
+    padding: 0.35rem 0.8rem;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    color: var(--color-text-light);
+    cursor: pointer;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    .checkin-phase-banner {
+        padding: 0.6rem 0.8rem;
+    }
+
+    .checkin-phase-name {
+        font-size: 1.15rem;
+    }
+
+    .checkin-search-container {
+        top: 60px;
+    }
+
+    .checkin-guest-row {
+        margin: 0 0.3rem 0.25rem;
+        padding: 0.75rem 0.8rem;
+    }
+}
+

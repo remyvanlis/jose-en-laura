@@ -1,0 +1,91 @@
+@using JoseEnLaura.Data.Models
+
+<div class="detail-grid">
+    <div class="detail-field">
+        <label>Type</label>
+        <select class="p-input p-input-xs" value="@Block.Type" @onchange="OnTypeChange">
+            <option value="Text">?? Tekst</option>
+            <option value="Checkbox">? Taak</option>
+            <option value="Heading">H Heading</option>
+            <option value="Question">? Vraag</option>
+            <option value="Important">? Belangrijk</option>
+        </select>
+    </div>
+    <div class="detail-field">
+        <label>Status</label>
+        <select class="p-input p-input-xs" value="@(Block.ItemStatus?.ToString() ?? "")" @onchange="OnStatusChange">
+            <option value="">— Geen —</option>
+            <option value="NotStarted">? Niet gestart</option>
+            <option value="InProgress">?? Bezig</option>
+            <option value="Done">? Klaar</option>
+            <option value="Blocked">?? Geblokkeerd</option>
+        </select>
+    </div>
+    <div class="detail-field">
+        <label>Prioriteit</label>
+        <select class="p-input p-input-xs" value="@(Block.Priority?.ToString() ?? "")" @onchange="OnPriorityChange">
+            <option value="">— Geen —</option>
+            <option value="Low">?? Laag</option>
+            <option value="Medium">?? Normaal</option>
+            <option value="High">?? Hoog</option>
+        </select>
+    </div>
+    <div class="detail-field">
+        <label>Toegewezen</label>
+        <select class="p-input p-input-xs" value="@(Block.AssignedToId?.ToString() ?? "0")" @onchange="OnAssigneeChange">
+            <option value="0">— Niemand —</option>
+            @foreach (var u in AdminUsers)
+            {
+                <option value="@u.Id">@u.Name</option>
+            }
+        </select>
+    </div>
+    <div class="detail-field">
+        <label>Deadline</label>
+        <input type="date" class="p-input p-input-xs" value="@(Block.Deadline?.ToString("yyyy-MM-dd") ?? "")" @onchange="OnDeadlineChange" />
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlanningBlock Block { get; set; } = default!;
+    [Parameter, EditorRequired] public List<AdminUser> AdminUsers { get; set; } = [];
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task OnTypeChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<BlockType>(e.Value?.ToString(), out var type))
+        {
+            Block.Type = type;
+            if (type != BlockType.Checkbox) Block.IsChecked = false;
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task OnStatusChange(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Block.ItemStatus = !string.IsNullOrEmpty(val) && Enum.TryParse<BlockItemStatus>(val, out var s) ? s : null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnPriorityChange(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Block.Priority = !string.IsNullOrEmpty(val) && Enum.TryParse<BlockPriority>(val, out var p) ? p : null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnAssigneeChange(ChangeEventArgs e)
+    {
+        var val = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        Block.AssignedToId = val > 0 ? val : null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnDeadlineChange(ChangeEventArgs e)
+    {
+        Block.Deadline = DateTime.TryParse(e.Value?.ToString(), out var d) ? d : null;
+        await OnChanged.InvokeAsync();
+    }
+}
+

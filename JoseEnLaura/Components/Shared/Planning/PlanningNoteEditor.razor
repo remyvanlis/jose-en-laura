@@ -1,0 +1,1053 @@
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@using System.Text.Json
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<!-- Note header -->
+<div class="note-editor" @onclick:stopPropagation>
+    <div class="note-header">
+        <div class="note-header-left">
+            <button class="p-btn p-btn-sm p-btn-ghost note-back-btn" @onclick="HandleClose" title="Terug naar overzicht">← <span class="btn-label">Terug</span></button>
+            <span class="note-cat-badge" style="background: @(Note.Category?.Color ?? "#888")20; color: @(Note.Category?.Color ?? "#888"); border: 1px solid @(Note.Category?.Color ?? "#888")40;">
+                @(Note.Category?.Icon) @(Note.Category?.Name)
+            </span>
+            <span class="note-version-badge">v@(Note.CurrentVersion)</span>
+        </div>
+        <div class="note-header-right">
+            <button class="p-btn p-btn-sm p-btn-ghost @(Note.IsPinnedInfo ? "active" : "")" @onclick="TogglePinnedInfo" title="@(Note.IsPinnedInfo ? "Losmaken van overzicht" : "Vastpinnen in overzicht")">📌 <span class="btn-label">@(Note.IsPinnedInfo ? "Vastgepind" : "Vastpinnen")</span></button>
+            <button class="p-btn p-btn-sm p-btn-ghost @(_showHistory ? "active" : "")" @onclick="ToggleHistory" title="Geschiedenis">🕐 <span class="btn-label">Geschiedenis</span></button>
+            <button class="p-btn p-btn-sm p-btn-ghost @(_showAudit ? "active" : "")" @onclick="ToggleAudit" title="Audit log">📊 <span class="btn-label">Audit</span></button>
+            <button class="p-btn p-btn-sm p-btn-ghost" @onclick="() => OnTimelineRequested.InvokeAsync()" title="Tijdlijn">📅 <span class="btn-label">Tijdlijn</span></button>
+            <button class="p-btn p-btn-sm p-btn-danger" @onclick="DeleteNote" title="Verwijderen">🗑</button>
+        </div>
+    </div>
+
+    <!-- Title -->
+    <input type="text" class="note-title-input" value="@Note.Title"
+           @oninput="OnNoteTitleInput" placeholder="Notitie titel..." />
+
+    <!-- Metadata bar -->
+    <div class="note-meta-bar">
+        <div class="meta-item">
+            <label>Status</label>
+            <select class="p-input p-input-sm meta-select" value="@Note.Status" @onchange="OnStatusChange">
+                <option value="NotStarted">⬜ Niet gestart</option>
+                <option value="InProgress">🔄 Bezig</option>
+                <option value="Done">✅ Klaar</option>
+                <option value="NeedsAttention">⚠️ Aandacht nodig</option>
+            </select>
+        </div>
+        <div class="meta-item">
+            <label>Toegewezen aan</label>
+            <select class="p-input p-input-sm meta-select" value="@(Note.AssignedToId?.ToString() ?? "0")" @onchange="OnAssigneeChange">
+                <option value="0">— Niemand —</option>
+                @foreach (var u in AdminUsers)
+                {
+                    <option value="@u.Id">@u.Name</option>
+                }
+            </select>
+        </div>
+        <div class="meta-item">
+            <label>Deadline</label>
+            <input type="datetime-local" class="p-input p-input-sm meta-select" value="@(Note.Deadline?.ToString("yyyy-MM-ddTHH:mm") ?? "")" @onchange="OnDeadlineChange" />
+        </div>
+        @{
+            var progress = PlanningHelpers.GetNoteProgress(Note);
+        }
+        @if (progress.Total > 0)
+        {
+            <div class="meta-item meta-progress">
+                <label>Voortgang</label>
+                <div class="progress-display">
+                    <div class="progress-bar-big">
+                        <div class="progress-fill-big" style="width: @progress.Percent%"></div>
+                    </div>
+                    <span class="progress-pct">@progress.Percent% (@progress.Done/@progress.Total)</span>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Block editor -->
+    <div class="block-editor" id="block-editor-container">
+        <div class="block-toolbar">
+            <button class="toolbar-btn" @onclick='() => AddBlock(BlockType.Text)' title="Tekst toevoegen">T</button>
+            <button class="toolbar-btn" @onclick='() => AddBlock(BlockType.Checkbox)' title="Checkbox toevoegen">☑</button>
+            <button class="toolbar-btn" @onclick='() => AddBlock(BlockType.Heading)' title="Heading toevoegen">H</button>
+            <button class="toolbar-btn toolbar-btn-question" @onclick='() => AddBlock(BlockType.Question)' title="Vraag toevoegen">?</button>
+            <button class="toolbar-btn toolbar-btn-important" @onclick='() => AddBlock(BlockType.Important)' title="Belangrijk toevoegen">!</button>
+            <span class="toolbar-sep"></span>
+            <label class="toolbar-btn toolbar-upload" title="Bestand uploaden">
+                📎
+                <InputFile OnChange="OnFileAttach" style="display:none;" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+            </label>
+            <span class="toolbar-hint">Enter = nieuwe regel · Tab = inspringen · / = commando</span>
+        </div>
+
+        <div class="blocks-container" id="blocks-container">
+            @foreach (var block in _editBlocks.OrderBy(b => b.SortOrder))
+            {
+                var capturedBlock = block;
+                var isHiddenByCollapse = IsBlockHiddenByCollapse(block);
+                if (isHiddenByCollapse) continue;
+
+                var hasChildren = HasVisibleChildren(block);
+                var commentCount = _blockCommentCounts.GetValueOrDefault(block.Id);
+                var isExpanded = _expandedBlockId == block.Id;
+                var isCommentsOpen = _commentsBlock?.Id == block.Id && _showComments;
+
+                <div @key="block.Id" class="block-row @(block.Type == BlockType.Heading ? "block-heading" : "") @(block.Type == BlockType.Question ? "block-question" : "") @(block.Type == BlockType.Important ? "block-important" : "") @(_focusedBlockId == block.Id ? "focused" : "") @(isExpanded ? "expanded" : "") @(isCommentsOpen ? "comments-open" : "")"
+                     style="padding-left: @(block.IndentLevel * 24 + 8)px">
+                    
+                    @if (hasChildren)
+                    {
+                        <button class="block-collapse-btn" @onclick="() => ToggleBlockCollapse(capturedBlock)" title="@(block.IsCollapsed ? "Uitklappen" : "Inklappen")">
+                            @(block.IsCollapsed ? "▶" : "▼")
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="block-collapse-spacer"></span>
+                    }
+
+                    <MarkCompleteButton Block="capturedBlock" OnToggled="() => { _hasUnsavedChanges = true; ScheduleSave(); }" />
+                    <BlockTypeDropdown Block="capturedBlock" OnTypeChanged="(type) => OnBlockTypeDropdownChanged(capturedBlock, type)" />
+
+                    @if (block.Priority.HasValue)
+                    {
+                        <span class="priority-dot priority-@block.Priority.Value.ToString().ToLower()" title="@PlanningHelpers.GetPriorityLabel(block.Priority.Value)"></span>
+                    }
+
+                    <div class="block-content @(block.IsChecked ? "checked-text" : "")"
+                         contenteditable="true"
+                         data-block-id="@block.Id"
+                         spellcheck="true"
+                         data-placeholder="@PlanningHelpers.GetBlockPlaceholder(block.Type)">
+                        @block.Content
+                    </div>
+
+                    <div class="block-badges">
+                        @if (block.AssignedToId.HasValue)
+                        {
+                            var assignee = AdminUsers.FirstOrDefault(u => u.Id == block.AssignedToId);
+                            <span class="badge-avatar" title="@assignee?.Name">@(assignee?.Name[..1])</span>
+                        }
+                        @if (block.ItemStatus.HasValue && block.ItemStatus != BlockItemStatus.NotStarted)
+                        {
+                            <span class="badge-status badge-status-@block.ItemStatus.Value.ToString().ToLower()" title="@PlanningHelpers.GetItemStatusLabel(block.ItemStatus.Value)">@PlanningHelpers.GetItemStatusIcon(block.ItemStatus.Value)</span>
+                        }
+                        @if (block.Deadline.HasValue)
+                        {
+                            var isOverdue = block.Deadline.Value < DateTime.UtcNow && block.ItemStatus != BlockItemStatus.Done;
+                            <span class="badge-deadline @(isOverdue ? "overdue" : "")" title="@block.Deadline.Value.ToString("dd MMM yyyy")">@block.Deadline.Value.ToString("dd/MM")</span>
+                        }
+                        @if (commentCount > 0)
+                        {
+                            <button class="badge-comments @(isCommentsOpen ? "active" : "")" @onclick="() => ToggleInlineComments(capturedBlock)" @onclick:stopPropagation title="@commentCount reactie(s)">💬@commentCount</button>
+                        }
+                    </div>
+
+                    <div class="block-actions">
+                        <button class="block-action-btn block-action-move" @onclick="() => MoveBlockUp(capturedBlock)" title="Omhoog">↑</button>
+                        <button class="block-action-btn block-action-move" @onclick="() => MoveBlockDown(capturedBlock)" title="Omlaag">↓</button>
+                        <button class="block-action-btn" @onclick="() => ToggleBlockExpand(capturedBlock)" title="Details">⋯</button>
+                        <button class="block-action-btn @(isCommentsOpen ? "active" : "")" @onclick="() => ToggleInlineComments(capturedBlock)" title="Reacties">💬</button>
+                        <button class="block-action-btn block-action-delete" @onclick="() => RemoveBlock(capturedBlock)" title="Verwijderen">×</button>
+                    </div>
+
+                    @if (block.AttachmentId.HasValue)
+                    {
+                        <div class="block-attachment">
+                            @{
+                                var att = _attachmentMeta.GetValueOrDefault(block.AttachmentId.Value);
+                            }
+                            @if (att != null && att.ContentType.StartsWith("image/"))
+                            {
+                                <img src="/api/planning-attachment/@block.AttachmentId" alt="@att.FileName" class="attachment-preview" />
+                            }
+                            else if (att != null)
+                            {
+                                <a href="/api/planning-attachment/@block.AttachmentId" target="_blank" class="attachment-link">📎 @att.FileName</a>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @if (isExpanded)
+                {
+                    <div class="block-detail-row" style="padding-left: @(block.IndentLevel * 24 + 42)px">
+                        <BlockDetailPanel Block="capturedBlock" AdminUsers="AdminUsers" OnChanged="OnBlockDetailChanged" />
+                    </div>
+                }
+
+                @if (isCommentsOpen)
+                {
+                    <div class="inline-comments" style="padding-left: @(block.IndentLevel * 24 + 42)px">
+                        <BlockInlineComments BlockId="capturedBlock.Id" CurrentUser="CurrentUser" NoteId="Note.Id"
+                                             AdminUsers="AdminUsers"
+                                             OnCommentCountChanged="(count) => OnCommentCountUpdate(capturedBlock.Id, count)"
+                                             OnClose="CloseBlockComments" />
+                    </div>
+                }
+            }
+
+            @if (_editBlocks.Count == 0)
+            {
+                <div class="blocks-empty" @onclick="() => AddBlock(BlockType.Text)">
+                    <p>Klik hier om te beginnen met typen, of gebruik de toolbar hierboven.</p>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Save indicator pill -->
+    @if (!string.IsNullOrEmpty(_saveStatus))
+    {
+        <div class="save-pill save-pill-@(_saveStatus)">
+            @switch (_saveStatus)
+            {
+                case "saving":
+                    <span class="save-pill-dot pulsing"></span>
+                    <span>Opslaan...</span>
+                    break;
+                case "saved":
+                    <span>✓ Opgeslagen</span>
+                    break;
+                case "error":
+                    <span>✕ Fout bij opslaan</span>
+                    break;
+            }
+        </div>
+    }
+</div>
+
+<!-- History panel (slide-in) -->
+@if (_showHistory)
+{
+    <aside class="history-panel">
+        <div class="history-header">
+            <h3>📜 Versiegeschiedenis</h3>
+            <button class="p-btn p-btn-sm p-btn-ghost" @onclick="() => _showHistory = false">✕</button>
+        </div>
+        <div class="history-list">
+            @if (_noteVersions.Count == 0)
+            {
+                <p class="history-empty">Nog geen eerdere versies.</p>
+            }
+            @foreach (var ver in _noteVersions.OrderByDescending(v => v.VersionNumber))
+            {
+                var isCurrent = ver.VersionNumber == Note.CurrentVersion;
+                <div class="history-item @(isCurrent ? "current" : "") @(_compareVersionId == ver.Id ? "comparing" : "")">
+                    <div class="history-item-header">
+                        <strong>Versie @ver.VersionNumber</strong>
+                        @if (isCurrent)
+                        {
+                            <span class="history-badge">Huidig</span>
+                        }
+                    </div>
+                    <div class="history-item-meta">
+                        <span>@ver.CreatedBy?.Name</span>
+                        <span>@ver.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                    </div>
+                    <div class="history-item-actions">
+                        <button class="p-btn p-btn-xs p-btn-ghost" @onclick="() => PreviewVersion(ver)">👁 Bekijken</button>
+                        @if (!isCurrent)
+                        {
+                            <button class="p-btn p-btn-xs p-btn-outline" @onclick="() => RestoreVersion(ver)">↩ Herstellen</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (_previewVersion is not null)
+        {
+            <div class="version-preview">
+                <h4>Versie @_previewVersion.VersionNumber</h4>
+                @{
+                    var snapshot = DeserializeSnapshot(_previewVersion.SnapshotJson);
+                }
+                @if (snapshot is not null)
+                {
+                    <div class="preview-blocks">
+                        @foreach (var b in snapshot.Blocks.OrderBy(x => x.SortOrder))
+                        {
+                            <div class="preview-block @(b.Type.ToLower())" style="padding-left: @(b.IndentLevel * 20)px">
+                                @if (b.Type == "Checkbox")
+                                {
+                                    <span>@(b.IsChecked ? "☑" : "☐")</span>
+                                }
+                                <span class="@(b.IsChecked ? "checked-text" : "")">@b.Content</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </aside>
+}
+
+<!-- Audit panel (slide-in) -->
+@if (_showAudit)
+{
+    <aside class="audit-panel">
+        <div class="audit-header">
+            <h3>📊 Audit Log</h3>
+            <button class="p-btn p-btn-sm p-btn-ghost" @onclick="() => _showAudit = false">✕</button>
+        </div>
+        <div class="audit-list">
+            @if (_auditLogs.Count == 0)
+            {
+                <p class="audit-empty">Nog geen activiteit.</p>
+            }
+            @foreach (var log in _auditLogs.OrderByDescending(a => a.Timestamp))
+            {
+                <div class="audit-item">
+                    <div class="audit-icon">@PlanningHelpers.GetAuditIcon(log.Action)</div>
+                    <div class="audit-content">
+                        <div class="audit-action">
+                            <strong>@log.User?.Name</strong> @PlanningHelpers.GetAuditActionText(log.Action)
+                        </div>
+                        @if (!string.IsNullOrEmpty(log.Details))
+                        {
+                            <div class="audit-details">@log.Details</div>
+                        }
+                        <div class="audit-time">@log.Timestamp.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public PlanningNote Note { get; set; } = default!;
+    [Parameter, EditorRequired] public AdminUser CurrentUser { get; set; } = default!;
+    [Parameter, EditorRequired] public List<AdminUser> AdminUsers { get; set; } = [];
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+    [Parameter] public EventCallback OnTimelineRequested { get; set; }
+
+    // Block editor state
+    private List<PlanningBlock> _editBlocks = [];
+    private int? _focusedBlockId;
+    private int? _expandedBlockId;
+    private Dictionary<int, AttachmentMeta> _attachmentMeta = [];
+    private Dictionary<int, int> _blockCommentCounts = [];
+    private bool _showComments;
+    private PlanningBlock? _commentsBlock;
+
+    // Save
+    private System.Timers.Timer? _saveTimer;
+    private string _saveStatus = "";
+    private bool _hasUnsavedChanges;
+
+    // History / Audit
+    private bool _showHistory;
+    private bool _showAudit;
+    private List<PlanningNoteVersion> _noteVersions = [];
+    private List<PlanningAuditLog> _auditLogs = [];
+    private PlanningNoteVersion? _previewVersion;
+    private int? _compareVersionId;
+
+    // JS
+    private DotNetObjectReference<PlanningNoteEditor>? _dotNetRef;
+
+    private int _tempBlockIdCounter = -1;
+    private int GetTempBlockId() => _tempBlockIdCounter--;
+
+    // Track previous note ID so we only reload when the note actually changes,
+    // NOT on every parent re-render (which would wipe in-progress typing).
+    private int _previousNoteId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_previousNoteId != Note.Id)
+        {
+            _previousNoteId = Note.Id;
+            await LoadNoteDetails();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("PlanningEditor.init", _dotNetRef, "blocks-container"); } catch { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _saveTimer?.Dispose();
+        _dotNetRef?.Dispose();
+    }
+
+    private async Task LoadNoteDetails()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var note = await db.PlanningNotes
+            .Include(n => n.Category)
+            .Include(n => n.AssignedTo)
+            .Include(n => n.CreatedBy)
+            .Include(n => n.UpdatedBy)
+            .Include(n => n.Blocks.OrderBy(b => b.SortOrder))
+                .ThenInclude(b => b.Attachment)
+            .FirstOrDefaultAsync(n => n.Id == Note.Id);
+
+        if (note is not null)
+        {
+            // Sync note reference with loaded data
+            Note.CurrentVersion = note.CurrentVersion;
+            Note.Category = note.Category;
+
+            _editBlocks = note.Blocks.Select(b => new PlanningBlock
+            {
+                Id = b.Id, NoteId = b.NoteId, Type = b.Type, Content = b.Content,
+                IsChecked = b.IsChecked, SortOrder = b.SortOrder, IndentLevel = b.IndentLevel,
+                AttachmentId = b.AttachmentId, AssignedToId = b.AssignedToId,
+                ItemStatus = b.ItemStatus, Priority = b.Priority, Deadline = b.Deadline, IsCollapsed = b.IsCollapsed
+            }).ToList();
+
+            _attachmentMeta.Clear();
+            var attachmentIds = _editBlocks.Where(b => b.AttachmentId.HasValue).Select(b => b.AttachmentId!.Value).ToList();
+            if (attachmentIds.Count > 0)
+            {
+                var attachments = await db.PlanningAttachments
+                    .Where(a => attachmentIds.Contains(a.Id))
+                    .Select(a => new { a.Id, a.FileName, a.ContentType, a.FileSize })
+                    .ToListAsync();
+                foreach (var a in attachments)
+                    _attachmentMeta[a.Id] = new AttachmentMeta(a.FileName, a.ContentType, a.FileSize);
+            }
+
+            _blockCommentCounts.Clear();
+            var blockIds = _editBlocks.Where(b => b.Id > 0).Select(b => b.Id).ToList();
+            if (blockIds.Count > 0)
+            {
+                var counts = await db.PlanningComments
+                    .Where(c => blockIds.Contains(c.BlockId))
+                    .GroupBy(c => c.BlockId)
+                    .Select(g => new { BlockId = g.Key, Count = g.Count() })
+                    .ToListAsync();
+                foreach (var c in counts)
+                    _blockCommentCounts[c.BlockId] = c.Count;
+            }
+        }
+
+        _expandedBlockId = null;
+        _showComments = false;
+        _commentsBlock = null;
+    }
+
+    // ===================== NOTE METADATA =====================
+    private void OnNoteTitleInput(ChangeEventArgs e)
+    {
+        Note.Title = e.Value?.ToString() ?? "";
+        ScheduleSave();
+    }
+
+    private void OnStatusChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<NoteStatus>(e.Value?.ToString(), out var status))
+        {
+            var oldStatus = Note.Status;
+            Note.Status = status;
+            _ = LogAudit("status_changed", $"Status gewijzigd: {PlanningHelpers.GetStatusLabel(oldStatus)} → {PlanningHelpers.GetStatusLabel(status)}");
+            ScheduleSave();
+        }
+    }
+
+    private void OnAssigneeChange(ChangeEventArgs e)
+    {
+        var val = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        Note.AssignedToId = val > 0 ? val : null;
+        var assigneeName = AdminUsers.FirstOrDefault(u => u.Id == val)?.Name ?? "niemand";
+        _ = LogAudit("assigned", $"Toegewezen aan: {assigneeName}");
+        ScheduleSave();
+    }
+
+    private void OnDeadlineChange(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var deadline))
+        {
+            Note.Deadline = deadline;
+            _ = LogAudit("deadline_set", $"Deadline ingesteld: {deadline:dd MMM yyyy HH:mm}");
+        }
+        else
+        {
+            Note.Deadline = null;
+            _ = LogAudit("deadline_removed", "Deadline verwijderd");
+        }
+        ScheduleSave();
+    }
+
+    // ===================== BLOCK EDITOR =====================
+    private async Task AddBlock(BlockType type)
+    {
+        var maxOrder = _editBlocks.Count > 0 ? _editBlocks.Max(b => b.SortOrder) : 0;
+        var newBlock = new PlanningBlock
+        {
+            Id = GetTempBlockId(), NoteId = Note.Id, Type = type, Content = "", SortOrder = maxOrder + 1
+        };
+        _editBlocks.Add(newBlock);
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+        StateHasChanged();
+        await Task.Delay(50);
+        try { await JS.InvokeVoidAsync("PlanningEditor.focusBlock", newBlock.Id, false); } catch { }
+    }
+
+    private void MoveBlockUp(PlanningBlock block)
+    {
+        var idx = _editBlocks.IndexOf(block);
+        if (idx <= 0) return;
+        _editBlocks.RemoveAt(idx);
+        _editBlocks.Insert(idx - 1, block);
+        NormalizeBlockOrder();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void MoveBlockDown(PlanningBlock block)
+    {
+        var idx = _editBlocks.IndexOf(block);
+        if (idx < 0 || idx >= _editBlocks.Count - 1) return;
+        _editBlocks.RemoveAt(idx);
+        _editBlocks.Insert(idx + 1, block);
+        NormalizeBlockOrder();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void RemoveBlock(PlanningBlock block)
+    {
+        _editBlocks.Remove(block);
+        NormalizeBlockOrder();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void OnBlockTypeDropdownChanged(PlanningBlock block, BlockType newType)
+    {
+        block.Type = newType;
+        if (newType != BlockType.Checkbox) block.IsChecked = false;
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void ToggleBlockExpand(PlanningBlock block) => _expandedBlockId = _expandedBlockId == block.Id ? null : block.Id;
+
+    private void ToggleBlockCollapse(PlanningBlock block)
+    {
+        block.IsCollapsed = !block.IsCollapsed;
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void OnBlockDetailChanged()
+    {
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+    }
+
+    private void OnCommentCountUpdate(int blockId, int count) => _blockCommentCounts[blockId] = count;
+
+    // ===================== JS CALLBACKS =====================
+    [JSInvokable]
+    public async Task OnBlockEnter(int blockId, string content, int cursorPos)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is null) return;
+        var beforeCursor = cursorPos <= content.Length ? content[..cursorPos] : content;
+        var afterCursor = cursorPos <= content.Length ? content[cursorPos..] : "";
+        block.Content = beforeCursor;
+        var newBlock = new PlanningBlock
+        {
+            Id = GetTempBlockId(), NoteId = Note.Id,
+            Type = block.Type == BlockType.Heading ? BlockType.Text : block.Type,
+            Content = afterCursor, SortOrder = block.SortOrder + 1, IndentLevel = block.IndentLevel
+        };
+        foreach (var b in _editBlocks.Where(b => b.SortOrder > block.SortOrder)) b.SortOrder++;
+        _editBlocks.Add(newBlock);
+        _editBlocks = _editBlocks.OrderBy(b => b.SortOrder).ToList();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(50);
+        try
+        {
+            await JS.InvokeVoidAsync("PlanningEditor.setBlockContent", blockId, beforeCursor);
+            await JS.InvokeVoidAsync("PlanningEditor.setBlockContent", newBlock.Id, afterCursor);
+            await JS.InvokeVoidAsync("PlanningEditor.focusBlock", newBlock.Id, false);
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public async Task OnBlockBackspaceEmpty(int blockId)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is null || _editBlocks.Count <= 1) return;
+        var prevBlock = _editBlocks.Where(b => b.SortOrder < block.SortOrder).OrderByDescending(b => b.SortOrder).FirstOrDefault();
+        _editBlocks.Remove(block);
+        NormalizeBlockOrder();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+        await InvokeAsync(StateHasChanged);
+        if (prevBlock is not null)
+        {
+            await Task.Delay(50);
+            try { await JS.InvokeVoidAsync("PlanningEditor.focusBlock", prevBlock.Id, true); } catch { }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnBlockBackspaceAtStart(int blockId, string content)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is null) return;
+        var prevBlock = _editBlocks.Where(b => b.SortOrder < block.SortOrder).OrderByDescending(b => b.SortOrder).FirstOrDefault();
+        if (prevBlock is null) return;
+        prevBlock.Content += content;
+        _editBlocks.Remove(block);
+        NormalizeBlockOrder();
+        _hasUnsavedChanges = true;
+        ScheduleSave();
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(50);
+        try
+        {
+            await JS.InvokeVoidAsync("PlanningEditor.setBlockContent", prevBlock.Id, prevBlock.Content);
+            await JS.InvokeVoidAsync("PlanningEditor.focusBlock", prevBlock.Id, true);
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public async Task OnBlockArrowUp(int blockId)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is null) return;
+        var prev = _editBlocks.Where(b => b.SortOrder < block.SortOrder).OrderByDescending(b => b.SortOrder).FirstOrDefault();
+        if (prev is not null)
+            try { await JS.InvokeVoidAsync("PlanningEditor.focusBlock", prev.Id, true); } catch { }
+    }
+
+    [JSInvokable]
+    public async Task OnBlockArrowDown(int blockId)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is null) return;
+        var next = _editBlocks.Where(b => b.SortOrder > block.SortOrder).OrderBy(b => b.SortOrder).FirstOrDefault();
+        if (next is not null)
+            try { await JS.InvokeVoidAsync("PlanningEditor.focusBlock", next.Id, false); } catch { }
+    }
+
+    [JSInvokable]
+    public Task OnBlockIndent(int blockId)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is not null && block.IndentLevel < 5)
+        {
+            block.IndentLevel++;
+            _hasUnsavedChanges = true;
+            ScheduleSave();
+            InvokeAsync(StateHasChanged);
+        }
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnBlockOutdent(int blockId)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is not null && block.IndentLevel > 0)
+        {
+            block.IndentLevel--;
+            _hasUnsavedChanges = true;
+            ScheduleSave();
+            InvokeAsync(StateHasChanged);
+        }
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnBlockContentChanged(int blockId, string content)
+    {
+        var block = _editBlocks.FirstOrDefault(b => b.Id == blockId);
+        if (block is not null)
+        {
+            block.Content = content;
+            // Auto-detect shortcuts
+            if (content.StartsWith("[] ") && block.Type == BlockType.Text) { block.Type = BlockType.Checkbox; block.Content = content[3..]; SyncBlockContent(blockId, block.Content); }
+            else if (content.StartsWith("# ") && block.Type == BlockType.Text) { block.Type = BlockType.Heading; block.Content = content[2..]; SyncBlockContent(blockId, block.Content); }
+            else if (content.StartsWith("? ") && block.Type == BlockType.Text) { block.Type = BlockType.Question; block.Content = content[2..]; SyncBlockContent(blockId, block.Content); }
+            else if (content.StartsWith("! ") && block.Type == BlockType.Text) { block.Type = BlockType.Important; block.Content = content[2..]; SyncBlockContent(blockId, block.Content); }
+            _hasUnsavedChanges = true;
+            ScheduleSave();
+        }
+        return Task.CompletedTask;
+    }
+
+    private void SyncBlockContent(int blockId, string content)
+    {
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await Task.Delay(30);
+            try { await JS.InvokeVoidAsync("PlanningEditor.setBlockContent", blockId, content); } catch { }
+        });
+    }
+
+    [JSInvokable]
+    public async Task OnBlockFocused(int blockId)
+    {
+        _focusedBlockId = blockId;
+        if (_expandedBlockId != blockId) _expandedBlockId = blockId;
+        if (_showComments && _commentsBlock?.Id != blockId) { _showComments = false; _commentsBlock = null; }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnFilePasted(string fileName, string contentType, string base64Data)
+    {
+        try
+        {
+            var data = Convert.FromBase64String(base64Data);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attachment = new PlanningAttachment
+            {
+                FileName = fileName, ContentType = contentType, Data = data,
+                FileSize = data.Length, UploadedById = CurrentUser.Id
+            };
+            db.PlanningAttachments.Add(attachment);
+            await db.SaveChangesAsync();
+            var maxOrder = _editBlocks.Count > 0 ? _editBlocks.Max(b => b.SortOrder) : 0;
+            var newBlock = new PlanningBlock
+            {
+                Id = GetTempBlockId(), NoteId = Note.Id, Type = BlockType.Text,
+                Content = fileName, SortOrder = maxOrder + 1, AttachmentId = attachment.Id
+            };
+            _editBlocks.Add(newBlock);
+            _attachmentMeta[attachment.Id] = new AttachmentMeta(fileName, contentType, data.Length);
+            _hasUnsavedChanges = true;
+            ScheduleSave();
+            await LogAudit("attachment_added", $"Bijlage toegevoegd: {fileName}");
+        }
+        catch { }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnFileAttach(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        const long maxSize = 10 * 1024 * 1024;
+        if (file.Size > maxSize) return;
+        try
+        {
+            using var stream = file.OpenReadStream(maxSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var data = ms.ToArray();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attachment = new PlanningAttachment
+            {
+                FileName = file.Name, ContentType = file.ContentType, Data = data,
+                FileSize = data.Length, UploadedById = CurrentUser.Id
+            };
+            db.PlanningAttachments.Add(attachment);
+            await db.SaveChangesAsync();
+            var maxOrder = _editBlocks.Count > 0 ? _editBlocks.Max(b => b.SortOrder) : 0;
+            _editBlocks.Add(new PlanningBlock
+            {
+                Id = GetTempBlockId(), NoteId = Note.Id, Type = BlockType.Text,
+                Content = file.Name, SortOrder = maxOrder + 1, AttachmentId = attachment.Id
+            });
+            _attachmentMeta[attachment.Id] = new AttachmentMeta(file.Name, file.ContentType, data.Length);
+            _hasUnsavedChanges = true;
+            ScheduleSave();
+            await LogAudit("attachment_added", $"Bijlage toegevoegd: {file.Name}");
+        }
+        catch { }
+    }
+
+    // ===================== COMMENTS =====================
+    private async Task ToggleInlineComments(PlanningBlock block)
+    {
+        if (_showComments && _commentsBlock?.Id == block.Id) { CloseBlockComments(); return; }
+        if (block.Id < 0) { _hasUnsavedChanges = true; await SaveNote(); block = _editBlocks.FirstOrDefault(b => b.SortOrder == block.SortOrder) ?? block; if (block.Id < 0) return; }
+        _commentsBlock = block;
+        _showComments = true;
+    }
+
+    private void CloseBlockComments() { _showComments = false; _commentsBlock = null; }
+
+    // ===================== AUTO-SAVE =====================
+    private void ScheduleSave()
+    {
+        _saveTimer?.Stop();
+        _saveTimer?.Dispose();
+        _saveTimer = new System.Timers.Timer(800);
+        _saveTimer.AutoReset = false;
+        _saveTimer.Elapsed += async (_, _) =>
+        {
+            await InvokeAsync(async () => { await SaveNote(); StateHasChanged(); });
+        };
+        _saveTimer.Start();
+    }
+
+    public async Task SaveNote()
+    {
+        if (!_hasUnsavedChanges) return;
+        _saveStatus = "saving";
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var note = await db.PlanningNotes.Include(n => n.Blocks).FirstOrDefaultAsync(n => n.Id == Note.Id);
+            if (note is null) { _saveStatus = "error"; return; }
+
+            note.Title = Note.Title;
+            note.Status = Note.Status;
+            note.AssignedToId = Note.AssignedToId;
+            note.Deadline = Note.Deadline;
+            note.UpdatedAt = DateTime.UtcNow;
+            note.UpdatedById = CurrentUser.Id;
+            note.CurrentVersion++;
+
+            var existingBlockIds = note.Blocks.Select(b => b.Id).ToHashSet();
+            var editBlockIds = _editBlocks.Where(b => b.Id > 0).Select(b => b.Id).ToHashSet();
+            db.PlanningBlocks.RemoveRange(note.Blocks.Where(b => !editBlockIds.Contains(b.Id)));
+
+            for (int i = 0; i < _editBlocks.Count; i++)
+            {
+                var eb = _editBlocks[i];
+                if (eb.Id > 0 && existingBlockIds.Contains(eb.Id))
+                {
+                    var dbBlock = note.Blocks.First(b => b.Id == eb.Id);
+                    dbBlock.Type = eb.Type; dbBlock.Content = eb.Content; dbBlock.IsChecked = eb.IsChecked;
+                    dbBlock.SortOrder = i + 1; dbBlock.IndentLevel = eb.IndentLevel; dbBlock.AttachmentId = eb.AttachmentId;
+                    dbBlock.AssignedToId = eb.AssignedToId; dbBlock.ItemStatus = eb.ItemStatus;
+                    dbBlock.Priority = eb.Priority; dbBlock.Deadline = eb.Deadline; dbBlock.IsCollapsed = eb.IsCollapsed;
+                }
+                else
+                {
+                    db.PlanningBlocks.Add(new PlanningBlock
+                    {
+                        NoteId = note.Id, Type = eb.Type, Content = eb.Content, IsChecked = eb.IsChecked,
+                        SortOrder = i + 1, IndentLevel = eb.IndentLevel, AttachmentId = eb.AttachmentId,
+                        AssignedToId = eb.AssignedToId, ItemStatus = eb.ItemStatus,
+                        Priority = eb.Priority, Deadline = eb.Deadline, IsCollapsed = eb.IsCollapsed
+                    });
+                }
+            }
+
+            var snapshot = CreateSnapshot(note.Title, _editBlocks);
+            db.PlanningNoteVersions.Add(new PlanningNoteVersion
+            {
+                NoteId = note.Id, VersionNumber = note.CurrentVersion, SnapshotJson = snapshot,
+                Title = note.Title, Status = note.Status, CreatedById = CurrentUser.Id
+            });
+            db.PlanningAuditLogs.Add(new PlanningAuditLog
+            {
+                NoteId = note.Id, Action = "edited", Details = $"Versie {note.CurrentVersion} opgeslagen",
+                UserId = CurrentUser.Id
+            });
+
+            await db.SaveChangesAsync();
+            Note.CurrentVersion = note.CurrentVersion;
+            _hasUnsavedChanges = false;
+            _saveStatus = "saved";
+
+            var savedBlocks = await db.PlanningBlocks.Where(b => b.NoteId == note.Id).OrderBy(b => b.SortOrder).ToListAsync();
+            _editBlocks = savedBlocks.Select(b => new PlanningBlock
+            {
+                Id = b.Id, NoteId = b.NoteId, Type = b.Type, Content = b.Content,
+                IsChecked = b.IsChecked, SortOrder = b.SortOrder, IndentLevel = b.IndentLevel,
+                AttachmentId = b.AttachmentId, AssignedToId = b.AssignedToId, ItemStatus = b.ItemStatus,
+                Priority = b.Priority, Deadline = b.Deadline, IsCollapsed = b.IsCollapsed
+            }).ToList();
+
+            await OnSaved.InvokeAsync();
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                await InvokeAsync(() => { _saveStatus = ""; StateHasChanged(); });
+            });
+        }
+        catch { _saveStatus = "error"; }
+    }
+
+    private async Task HandleClose()
+    {
+        if (_hasUnsavedChanges) await SaveNote();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task DeleteNote()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Notitie '{Note.Title}' verwijderen? Dit kan niet ongedaan worden gemaakt.");
+        if (!confirmed) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var note = await db.PlanningNotes.FindAsync(Note.Id);
+        if (note is not null) { db.PlanningNotes.Remove(note); await db.SaveChangesAsync(); }
+        await OnDeleted.InvokeAsync();
+    }
+
+    private async Task TogglePinnedInfo()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (!Note.IsPinnedInfo)
+            {
+                await db.PlanningNotes.Where(n => n.IsPinnedInfo).ExecuteUpdateAsync(s => s.SetProperty(n => n.IsPinnedInfo, false));
+            }
+            var dbNote = await db.PlanningNotes.FindAsync(Note.Id);
+            if (dbNote is not null)
+            {
+                dbNote.IsPinnedInfo = !Note.IsPinnedInfo;
+                await db.SaveChangesAsync();
+                Note.IsPinnedInfo = dbNote.IsPinnedInfo;
+            }
+        }
+        catch { }
+    }
+
+    // ===================== VERSIONING =====================
+    private async Task ToggleHistory()
+    {
+        _showHistory = !_showHistory;
+        _showAudit = false;
+        if (_showHistory)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _noteVersions = await db.PlanningNoteVersions.Include(v => v.CreatedBy)
+                .Where(v => v.NoteId == Note.Id).OrderByDescending(v => v.VersionNumber).ToListAsync();
+        }
+    }
+
+    private async Task ToggleAudit()
+    {
+        _showAudit = !_showAudit;
+        _showHistory = false;
+        if (_showAudit)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _auditLogs = await db.PlanningAuditLogs.Include(a => a.User)
+                .Where(a => a.NoteId == Note.Id).OrderByDescending(a => a.Timestamp).Take(100).ToListAsync();
+        }
+    }
+
+    private void PreviewVersion(PlanningNoteVersion ver) => _previewVersion = _previewVersion?.Id == ver.Id ? null : ver;
+
+    private async Task RestoreVersion(PlanningNoteVersion ver)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Versie {ver.VersionNumber} herstellen?");
+        if (!confirmed) return;
+        var snapshot = DeserializeSnapshot(ver.SnapshotJson);
+        if (snapshot is null) return;
+        Note.Title = snapshot.Title;
+        _editBlocks = snapshot.Blocks.Select(b => new PlanningBlock
+        {
+            Id = GetTempBlockId(), NoteId = Note.Id,
+            Type = Enum.TryParse<BlockType>(b.Type, out var bt) ? bt : BlockType.Text,
+            Content = b.Content, IsChecked = b.IsChecked, SortOrder = b.SortOrder, IndentLevel = b.IndentLevel
+        }).ToList();
+        _hasUnsavedChanges = true;
+        await LogAudit("restored", $"Hersteld naar versie {ver.VersionNumber}");
+        await SaveNote();
+        StateHasChanged();
+    }
+
+    // ===================== HELPERS =====================
+    private void NormalizeBlockOrder()
+    {
+        var ordered = _editBlocks.OrderBy(b => b.SortOrder).ToList();
+        for (int i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+    }
+
+    private bool IsBlockHiddenByCollapse(PlanningBlock block)
+    {
+        var ordered = _editBlocks.OrderBy(b => b.SortOrder).ToList();
+        var idx = ordered.IndexOf(block);
+        if (idx <= 0) return false;
+        for (int i = idx - 1; i >= 0; i--)
+        {
+            var prev = ordered[i];
+            if (prev.IndentLevel < block.IndentLevel) { if (prev.IsCollapsed) return true; if (prev.IndentLevel == 0) break; }
+            else if (prev.IndentLevel < block.IndentLevel - 1) break;
+        }
+        return false;
+    }
+
+    private bool HasVisibleChildren(PlanningBlock block)
+    {
+        var ordered = _editBlocks.OrderBy(b => b.SortOrder).ToList();
+        var idx = ordered.IndexOf(block);
+        if (idx < 0 || idx >= ordered.Count - 1) return false;
+        return ordered[idx + 1].IndentLevel > block.IndentLevel;
+    }
+
+    private string CreateSnapshot(string title, List<PlanningBlock> blocks)
+    {
+        var snapshot = new NoteSnapshot
+        {
+            Title = title,
+            Blocks = blocks.Select(b => new BlockSnapshot
+            {
+                Type = b.Type.ToString(), Content = b.Content, IsChecked = b.IsChecked,
+                SortOrder = b.SortOrder, IndentLevel = b.IndentLevel, AssignedToId = b.AssignedToId,
+                ItemStatus = b.ItemStatus?.ToString(), Priority = b.Priority?.ToString(), Deadline = b.Deadline
+            }).ToList()
+        };
+        return JsonSerializer.Serialize(snapshot);
+    }
+
+    private static NoteSnapshot? DeserializeSnapshot(string json)
+    {
+        try { return JsonSerializer.Deserialize<NoteSnapshot>(json); }
+        catch { return null; }
+    }
+
+    private async Task LogAudit(string action, string details)
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.PlanningAuditLogs.Add(new PlanningAuditLog { NoteId = Note.Id, Action = action, Details = details, UserId = CurrentUser.Id });
+            await db.SaveChangesAsync();
+        }
+        catch { }
+    }
+
+    private sealed record AttachmentMeta(string FileName, string ContentType, long FileSize);
+
+    private class NoteSnapshot
+    {
+        public string Title { get; set; } = "";
+        public List<BlockSnapshot> Blocks { get; set; } = [];
+    }
+
+    private class BlockSnapshot
+    {
+        public string Type { get; set; } = "Text";
+        public string Content { get; set; } = "";
+        public bool IsChecked { get; set; }
+        public int SortOrder { get; set; }
+        public int IndentLevel { get; set; }
+        public int? AssignedToId { get; set; }
+        public string? ItemStatus { get; set; }
+        public string? Priority { get; set; }
+        public DateTime? Deadline { get; set; }
+    }
+}
+

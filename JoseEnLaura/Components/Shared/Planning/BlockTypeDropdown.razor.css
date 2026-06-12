@@ -1,0 +1,141 @@
+/* Block Type Dropdown */
+.block-type-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.block-type-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #bbb;
+  transition: all 0.15s;
+  user-select: none;
+}
+.block-type-btn:hover {
+  border-color: #e0ddd8;
+  background: #f5f3f0;
+  color: #888;
+  transform: scale(1.1);
+}
+.block-type-btn.type-checked {
+  color: #22c55e;
+}
+.block-type-btn.type-question {
+  color: #d97706;
+  font-weight: 700;
+}
+.block-type-btn.type-important {
+  color: #dc2626;
+  font-weight: 700;
+}
+.block-type-btn.type-heading {
+  color: #2d2d2d;
+  font-weight: 700;
+}
+
+.type-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.type-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: white;
+  border: 1px solid #eae8e4;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 130px;
+  animation: dropIn 0.1s ease;
+}
+
+@keyframes dropIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.type-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  color: #333;
+  text-align: left;
+  transition: background 0.1s;
+}
+.type-option:hover {
+  background: #f5f3f0;
+}
+
+.type-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #bbb;
+}
+.type-icon-checkbox {
+  color: #64748b;
+}
+.type-icon-heading {
+  color: #2d2d2d;
+  font-weight: 700;
+}
+.type-icon-question {
+  color: #d97706;
+  font-weight: 700;
+}
+.type-icon-important {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .type-dropdown {
+    position: fixed;
+    top: auto;
+    left: 50%;
+    bottom: 1rem;
+    transform: translateX(-50%);
+    min-width: 160px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    z-index: 200;
+  }
+  .type-option {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+  .type-dropdown-backdrop {
+    background: rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(1px);
+  }
+}
+
+/*# sourceMappingURL=BlockTypeDropdown.razor.css.map */

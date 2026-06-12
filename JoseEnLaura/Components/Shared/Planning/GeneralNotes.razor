@@ -1,0 +1,465 @@
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="general-notes-section">
+    <div class="general-notes-header" @onclick="() => _collapsed = !_collapsed">
+        <span class="general-notes-chevron">@(_collapsed ? "▶" : "▼")</span>
+        <h3>📝 Algemene notities</h3>
+        <span class="general-notes-count">@_entries.Count</span>
+    </div>
+
+    @if (!_collapsed)
+    {
+        <div class="general-notes-body">
+            <div class="general-notes-list">
+                @if (_entries.Count == 0)
+                {
+                    <p class="general-notes-empty">Nog geen notities. Typ hieronder om te beginnen.</p>
+                }
+                @foreach (var entry in _entries.OrderByDescending(e => e.CreatedAt))
+                {
+                    var capturedEntry = entry;
+                    var isOwn = entry.CreatedById == CurrentUser.Id;
+                    var commentCount = _entryComments.GetValueOrDefault(entry.Id)?.Count ?? 0;
+                    <div class="general-note-entry @(isOwn ? "own" : "")">
+                        <div class="gn-avatar">@(entry.CreatedBy?.Name?[..1] ?? "?")</div>
+                        <div class="gn-body">
+                            <div class="gn-meta">
+                                <strong>@(entry.CreatedBy?.Name ?? "Onbekend")</strong>
+                                <span class="gn-time">@entry.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                                @if (isOwn)
+                                {
+                                    <button class="gn-delete-btn" @onclick="() => DeleteEntry(capturedEntry)" title="Verwijderen">🗑</button>
+                                }
+                            </div>
+                            <div class="gn-content">@((MarkupString)PlanningHelpers.RenderMentions(entry.Content, AdminUsers))</div>
+                            @if (entry.AttachmentId.HasValue && entry.Attachment is not null)
+                            {
+                                <div class="gn-attachment">
+                                    @if (entry.Attachment.ContentType.StartsWith("image/"))
+                                    {
+                                        <img src="/api/planning-attachment/@entry.AttachmentId" alt="@entry.Attachment.FileName" class="gn-attachment-preview" />
+                                    }
+                                    else
+                                    {
+                                        <a href="/api/planning-attachment/@entry.AttachmentId" target="_blank" class="gn-attachment-link">📎 @entry.Attachment.FileName</a>
+                                    }
+                                </div>
+                            }
+                            @* Comment thread toggle *@
+                            <div class="gn-comment-toggle">
+                                <button class="gn-comment-toggle-btn @(commentCount == 0 ? "no-comments" : "")" @onclick="() => ToggleComments(capturedEntry.Id)">
+                                    💬 @(commentCount > 0 ? $"{commentCount} reactie{(commentCount == 1 ? "" : "s")}" : "Reageer")
+                                    <span class="gn-comment-chevron">@(_expandedCommentEntryId == entry.Id ? "▼" : "▶")</span>
+                                </button>
+                            </div>
+                            @if (_expandedCommentEntryId == entry.Id)
+                            {
+                                <div class="gn-comment-thread">
+                                    @{
+                                        var comments = _entryComments.GetValueOrDefault(entry.Id) ?? [];
+                                        var topLevel = comments.Where(c => c.ParentCommentId == null).OrderBy(c => c.CreatedAt).ToList();
+                                    }
+                                    @foreach (var comment in topLevel)
+                                    {
+                                        @RenderGeneralNoteComment(comment, comments, 0)
+                                    }
+                                    @if (_gnReplyToCommentId.HasValue)
+                                    {
+                                        <div class="reply-indicator gn-reply-indicator">
+                                            <span>↩ Antwoord op <strong>@_gnReplyToCommentAuthor</strong></span>
+                                            <button class="reply-cancel-btn" @onclick="CancelGnReply">✕</button>
+                                        </div>
+                                    }
+                                    <div class="gn-comment-input-row">
+                                        <textarea class="gn-comment-textarea" rows="1" @bind="_gnCommentText" @bind:event="oninput"
+                                                  @onkeydown="OnGnCommentKey" placeholder="Reageer..."></textarea>
+                                        <button class="gn-comment-send-btn" @onclick="() => AddGeneralNoteComment(capturedEntry.Id)"
+                                                disabled="@string.IsNullOrWhiteSpace(_gnCommentText)">↑</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="general-notes-input">
+                <div class="gn-input-row">
+                    <textarea @ref="_textareaRef" id="general-notes-textarea" class="gn-textarea" rows="2" @bind="_newText" @bind:event="oninput"
+                              @onkeydown="OnInputKey" placeholder="Notitie toevoegen... (gebruik @@ om iemand te noemen)"></textarea>
+                    <div class="gn-input-actions">
+                        <label class="gn-attach-btn" title="Bestand bijvoegen">
+                            📎
+                            <InputFile OnChange="OnFileAttach" style="display:none;" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+                        </label>
+                        @if (_pendingAttachmentName is not null)
+                        {
+                            <span class="gn-pending-file" title="@_pendingAttachmentName">📄 @PlanningHelpers.TruncateText(_pendingAttachmentName, 15)</span>
+                        }
+                        <button class="gn-send-btn" @onclick="AddEntry" disabled="@(string.IsNullOrWhiteSpace(_newText) && _pendingAttachmentId is null)">↑</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AdminUser CurrentUser { get; set; } = default!;
+    [Parameter] public List<AdminUser> AdminUsers { get; set; } = [];
+
+    private List<GeneralNoteEntry> _entries = [];
+    private bool _collapsed;
+    private string _newText = "";
+    private int? _pendingAttachmentId;
+    private string? _pendingAttachmentName;
+    private DotNetObjectReference<GeneralNotes>? _dotNetRef;
+    private ElementReference _textareaRef;
+
+    // Comment thread state
+    private Dictionary<int, List<GeneralNoteComment>> _entryComments = [];
+    private int? _expandedCommentEntryId;
+    private string _gnCommentText = "";
+    private int? _gnReplyToCommentId;
+    private string? _gnReplyToCommentAuthor;
+
+    // Comment editing state
+    private int? _editingCommentId;
+    private string _editCommentText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEntries();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("GeneralNotesPaste.init", _dotNetRef, "general-notes-textarea"); } catch { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private async Task LoadEntries()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _entries = await db.GeneralNoteEntries
+            .Include(e => e.CreatedBy)
+            .Include(e => e.Attachment)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(50)
+            .ToListAsync();
+
+        // Load comments for all entries
+        var entryIds = _entries.Select(e => e.Id).ToList();
+        if (entryIds.Count > 0)
+        {
+            var comments = await db.GeneralNoteComments
+                .Include(c => c.CreatedBy)
+                .Include(c => c.Attachment)
+                .Where(c => entryIds.Contains(c.GeneralNoteEntryId))
+                .OrderBy(c => c.CreatedAt)
+                .ToListAsync();
+            _entryComments = comments.GroupBy(c => c.GeneralNoteEntryId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+        }
+        else
+        {
+            _entryComments = [];
+        }
+    }
+
+    private async Task AddEntry()
+    {
+        if (string.IsNullOrWhiteSpace(_newText) && _pendingAttachmentId is null) return;
+
+        var mentionIds = PlanningHelpers.ExtractMentionedUserIds(_newText ?? "", AdminUsers);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entry = new GeneralNoteEntry
+        {
+            Content = (_newText ?? "").Trim(),
+            MentionedUserIds = PlanningHelpers.SerializeMentionIds(mentionIds),
+            CreatedById = CurrentUser.Id,
+            AttachmentId = _pendingAttachmentId
+        };
+        db.GeneralNoteEntries.Add(entry);
+        await db.SaveChangesAsync();
+
+        entry.CreatedBy = CurrentUser;
+        if (_pendingAttachmentId.HasValue)
+        {
+            entry.Attachment = await db.PlanningAttachments.FindAsync(_pendingAttachmentId.Value);
+        }
+
+        _entries.Insert(0, entry);
+        _newText = "";
+        _pendingAttachmentId = null;
+        _pendingAttachmentName = null;
+
+        // Auto-focus back on the input
+        try { await _textareaRef.FocusAsync(); } catch { }
+    }
+
+    private async Task DeleteEntry(GeneralNoteEntry entry)
+    {
+        if (entry.CreatedById != CurrentUser.Id) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbEntry = await db.GeneralNoteEntries.FindAsync(entry.Id);
+        if (dbEntry is not null && dbEntry.CreatedById == CurrentUser.Id)
+        {
+            db.GeneralNoteEntries.Remove(dbEntry);
+            await db.SaveChangesAsync();
+        }
+        _entries.Remove(entry);
+    }
+
+    private async Task OnFileAttach(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        const long maxSize = 10 * 1024 * 1024;
+        if (file.Size > maxSize) return;
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var data = ms.ToArray();
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attachment = new PlanningAttachment
+            {
+                FileName = file.Name,
+                ContentType = file.ContentType,
+                Data = data,
+                FileSize = data.Length,
+                UploadedById = CurrentUser.Id
+            };
+            db.PlanningAttachments.Add(attachment);
+            await db.SaveChangesAsync();
+
+            _pendingAttachmentId = attachment.Id;
+            _pendingAttachmentName = file.Name;
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public async Task OnGeneralNotePasted(string fileName, string contentType, string base64Data)
+    {
+        try
+        {
+            var data = Convert.FromBase64String(base64Data);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attachment = new PlanningAttachment
+            {
+                FileName = fileName,
+                ContentType = contentType,
+                Data = data,
+                FileSize = data.Length,
+                UploadedById = CurrentUser.Id
+            };
+            db.PlanningAttachments.Add(attachment);
+            await db.SaveChangesAsync();
+
+            _pendingAttachmentId = attachment.Id;
+            _pendingAttachmentName = fileName;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { }
+    }
+
+    private async Task OnInputKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await AddEntry();
+        }
+    }
+
+    private async Task ToggleComments(int entryId)
+    {
+        if (_expandedCommentEntryId == entryId)
+        {
+            _expandedCommentEntryId = null;
+            return;
+        }
+        _expandedCommentEntryId = entryId;
+        _gnCommentText = "";
+        _gnReplyToCommentId = null;
+        _gnReplyToCommentAuthor = null;
+
+        // Reload comments for this entry
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var comments = await db.GeneralNoteComments
+            .Include(c => c.CreatedBy)
+            .Include(c => c.Attachment)
+            .Where(c => c.GeneralNoteEntryId == entryId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
+        _entryComments[entryId] = comments;
+    }
+
+    private async Task AddGeneralNoteComment(int entryId)
+    {
+        if (string.IsNullOrWhiteSpace(_gnCommentText)) return;
+
+        var mentionIds = PlanningHelpers.ExtractMentionedUserIds(_gnCommentText, AdminUsers);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var comment = new GeneralNoteComment
+        {
+            GeneralNoteEntryId = entryId,
+            Content = _gnCommentText.Trim(),
+            MentionedUserIds = PlanningHelpers.SerializeMentionIds(mentionIds),
+            CreatedById = CurrentUser.Id,
+            ParentCommentId = _gnReplyToCommentId
+        };
+        db.GeneralNoteComments.Add(comment);
+        await db.SaveChangesAsync();
+
+        comment.CreatedBy = CurrentUser;
+
+        if (!_entryComments.ContainsKey(entryId))
+            _entryComments[entryId] = [];
+        _entryComments[entryId].Add(comment);
+
+        _gnCommentText = "";
+        _gnReplyToCommentId = null;
+        _gnReplyToCommentAuthor = null;
+    }
+
+    private async Task DeleteGnComment(GeneralNoteComment comment, int entryId)
+    {
+        if (comment.CreatedById != CurrentUser.Id) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbComment = await db.GeneralNoteComments.FindAsync(comment.Id);
+        if (dbComment is not null && dbComment.CreatedById == CurrentUser.Id)
+        {
+            db.GeneralNoteComments.Remove(dbComment);
+            await db.SaveChangesAsync();
+        }
+        _entryComments.GetValueOrDefault(entryId)?.Remove(comment);
+    }
+
+    private void StartEditGnComment(GeneralNoteComment comment)
+    {
+        _editingCommentId = comment.Id;
+        _editCommentText = comment.Content;
+    }
+
+    private void CancelEditGnComment()
+    {
+        _editingCommentId = null;
+        _editCommentText = "";
+    }
+
+    private async Task SaveEditGnComment(GeneralNoteComment comment, int entryId)
+    {
+        if (comment.CreatedById != CurrentUser.Id || string.IsNullOrWhiteSpace(_editCommentText)) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbComment = await db.GeneralNoteComments.FindAsync(comment.Id);
+        if (dbComment is not null && dbComment.CreatedById == CurrentUser.Id)
+        {
+            dbComment.Content = _editCommentText.Trim();
+            dbComment.UpdatedAt = DateTime.UtcNow;
+            dbComment.MentionedUserIds = PlanningHelpers.SerializeMentionIds(
+                PlanningHelpers.ExtractMentionedUserIds(_editCommentText, AdminUsers));
+            await db.SaveChangesAsync();
+            comment.Content = dbComment.Content;
+            comment.UpdatedAt = dbComment.UpdatedAt;
+            comment.MentionedUserIds = dbComment.MentionedUserIds;
+        }
+        _editingCommentId = null;
+        _editCommentText = "";
+    }
+
+    private void StartGnReply(GeneralNoteComment comment)
+    {
+        _gnReplyToCommentId = comment.Id;
+        _gnReplyToCommentAuthor = comment.CreatedBy?.Name ?? "Onbekend";
+    }
+
+    private void CancelGnReply()
+    {
+        _gnReplyToCommentId = null;
+        _gnReplyToCommentAuthor = null;
+    }
+
+    private async Task OnGnCommentKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && _expandedCommentEntryId.HasValue)
+        {
+            await AddGeneralNoteComment(_expandedCommentEntryId.Value);
+        }
+    }
+
+    private RenderFragment RenderGeneralNoteComment(GeneralNoteComment comment, List<GeneralNoteComment> allComments, int indent) => __builder =>
+    {
+        var capturedComment = comment;
+        var isOwn = comment.CreatedById == CurrentUser.Id;
+        var isEditing = _editingCommentId == comment.Id;
+        var marginLeft = indent * 20;
+
+        <div class="gn-thread-comment" style="margin-left: @(marginLeft)px;">
+            @if (comment.ParentCommentId.HasValue)
+            {
+                <span class="comment-reply-indicator">↩</span>
+            }
+            <div class="gn-thread-avatar">@(comment.CreatedBy?.Name?[..1] ?? "?")</div>
+            <div class="gn-thread-body">
+                <div class="gn-thread-meta">
+                    <strong>@(comment.CreatedBy?.Name ?? "Onbekend")</strong>
+                    <span class="gn-thread-time">@comment.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                    @if (comment.UpdatedAt.HasValue)
+                    {
+                        <span class="gn-thread-edited" title="Bewerkt op @comment.UpdatedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")">(bewerkt)</span>
+                    }
+                    @if (!isEditing)
+                    {
+                        <button class="comment-action-btn comment-reply-btn" @onclick="() => StartGnReply(capturedComment)" title="Beantwoorden">↩</button>
+                        @if (isOwn)
+                        {
+                            <button class="comment-action-btn comment-edit-btn" @onclick="() => StartEditGnComment(capturedComment)" title="Bewerken">✏</button>
+                            <button class="comment-action-btn comment-action-delete" @onclick="() => DeleteGnComment(capturedComment, comment.GeneralNoteEntryId)" title="Verwijderen">🗑</button>
+                        }
+                    }
+                </div>
+                @if (isEditing)
+                {
+                    <div class="gn-edit-row">
+                        <textarea class="gn-comment-textarea" rows="2" @bind="_editCommentText" @bind:event="oninput"></textarea>
+                        <div class="gn-edit-actions">
+                            <button class="gn-edit-save-btn" @onclick="() => SaveEditGnComment(capturedComment, comment.GeneralNoteEntryId)"
+                                    disabled="@string.IsNullOrWhiteSpace(_editCommentText)">✓</button>
+                            <button class="gn-edit-cancel-btn" @onclick="CancelEditGnComment">✕</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="gn-thread-text">@((MarkupString)PlanningHelpers.RenderMentions(comment.Content, AdminUsers))</div>
+                }
+            </div>
+        </div>
+
+        @foreach (var reply in allComments.Where(c => c.ParentCommentId == comment.Id).OrderBy(c => c.CreatedAt))
+        {
+            @RenderGeneralNoteComment(reply, allComments, indent + 1)
+        }
+    };
+}
+

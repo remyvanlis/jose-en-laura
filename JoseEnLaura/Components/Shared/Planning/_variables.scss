@@ -1,0 +1,76 @@
+﻿// ==============================================
+//  PLANNING MODULE — Shared Variables
+// ==============================================
+
+// Brand / accent
+$accent: #c4956a;
+$accent-hover: #b07d55;
+$accent-bg: rgba(196, 149, 106, 0.08);
+$accent-bg-light: rgba(196, 149, 106, 0.12);
+$accent-bg-subtle: rgba(196, 149, 106, 0.05);
+
+// Text
+$text-dark: #1a1a1a;
+$text-heading: #2d2d2d;
+$text-body: #333;
+$text-secondary: #555;
+$text-muted: #666;
+$text-light: #888;
+$text-lighter: #999;
+$text-faint: #aaa;
+$text-placeholder: #bbb;
+$text-dim: #ccc;
+
+// Borders
+$border: #eae8e4;
+$border-light: #f0eeeb;
+$border-lighter: #f5f3f0;
+$border-input: #e0ddd8;
+
+// Backgrounds
+$bg-page: #f8f7f4;
+$bg-section: #faf9f7;
+$bg-hover: #f5f3f0;
+$bg-white: white;
+
+// Status colors
+$color-success: #22c55e;
+$color-success-dark: #16a34a;
+$color-success-bg: #f0fdf4;
+$color-danger: #dc2626;
+$color-danger-dark: #991b1b;
+$color-danger-bg: #fef2f2;
+$color-warning: #f59e0b;
+$color-warning-dark: #d97706;
+$color-warning-text: #92400e;
+$color-warning-bg: #fef3c7;
+$color-info: #3b82f6;
+$color-info-dark: #2563eb;
+$color-info-darkest: #1d4ed8;
+$color-info-bg: #eff6ff;
+$color-info-bg-light: #dbeafe;
+$color-blue-subtle: rgba(59, 130, 246, 0.1);
+
+// Fonts
+$font-sans: 'Josefin Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+$font-serif: 'Playfair Display', serif;
+
+// Radii
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius: 8px;
+$radius-lg: 10px;
+$radius-xl: 12px;
+$radius-2xl: 16px;
+$radius-full: 50%;
+
+// Shadows
+$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+$shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+$shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.08);
+$shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.15);
+
+// Avatar defaults
+$avatar-bg: #e0d5ca;
+$avatar-color: #6b5443;
+

@@ -1,0 +1,84 @@
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject ProtectedLocalStorage LocalStorage
+
+<div class="planning-login-wrap">
+    <div class="planning-login-card">
+        <h1>📋 Planning</h1>
+        <p class="subtitle">José & Laura — Bruiloftsplanner</p>
+        <div class="form-group">
+            <label>Wie ben je?</label>
+            <select class="p-input" @bind="_selectedUserName">
+                <option value="">— Kies je naam —</option>
+                @foreach (var u in AdminUsers)
+                {
+                    <option value="@u.Name">@u.Name</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Wachtwoord</label>
+            <input type="password" class="p-input" @bind="_password" @bind:event="oninput"
+                   @onkeydown="OnLoginKey" placeholder="Voer je wachtwoord in..." />
+        </div>
+        @if (!string.IsNullOrEmpty(_loginError))
+        {
+            <div class="p-error">@_loginError</div>
+        }
+        <button class="p-btn p-btn-primary" @onclick="HandleLogin">Inloggen</button>
+        <a href="/admin" class="p-link-back">← Terug naar admin</a>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<AdminUser> AdminUsers { get; set; } = [];
+    [Parameter, EditorRequired] public EventCallback<AdminUser> OnLoggedIn { get; set; }
+
+    private string _selectedUserName = "";
+    private string _password = "";
+    private string _loginError = "";
+
+    private async Task HandleLogin()
+    {
+        _loginError = "";
+        if (string.IsNullOrWhiteSpace(_selectedUserName)) { _loginError = "Selecteer een naam."; return; }
+        if (string.IsNullOrWhiteSpace(_password) || _password.Length < 4) { _loginError = "Wachtwoord moet minimaal 4 tekens zijn."; return; }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.AdminUsers.FirstOrDefaultAsync(u => u.Name == _selectedUserName);
+        if (user is null) return;
+
+        if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(_password);
+            await db.SaveChangesAsync();
+            await SaveSession(user.Id);
+            await OnLoggedIn.InvokeAsync(user);
+        }
+        else if (BCrypt.Net.BCrypt.Verify(_password, user.PasswordHash))
+        {
+            await SaveSession(user.Id);
+            await OnLoggedIn.InvokeAsync(user);
+        }
+        else
+        {
+            _loginError = "Wachtwoord onjuist.";
+        }
+    }
+
+    private async Task OnLoginKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await HandleLogin();
+    }
+
+    private async Task SaveSession(int userId)
+    {
+        await LocalStorage.SetAsync("admin_session", new AdminSession(userId, DateTime.UtcNow.AddDays(7)));
+    }
+
+    private sealed record AdminSession(int UserId, DateTime ExpiresUtc);
+}
+

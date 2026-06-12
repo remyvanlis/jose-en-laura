@@ -1,0 +1,207 @@
+@using JoseEnLaura.Data.Models
+
+<aside class="planning-sidebar @(Collapsed ? "collapsed" : "")">
+    <div class="sidebar-header">
+        <h2>📋 Planning</h2>
+        <button class="sidebar-toggle" @onclick="() => OnToggleCollapsed.InvokeAsync()" title="@(Collapsed ? "Uitklappen" : "Inklappen")">
+            @(Collapsed ? "→" : "←")
+        </button>
+    </div>
+
+    @if (!Collapsed)
+    {
+        <!-- Search -->
+        <div class="sidebar-search">
+            <input type="text" class="p-input p-input-sm" placeholder="🔍 Zoeken..." value="@SearchQuery"
+                   @oninput="e => OnSearchChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+
+        <!-- Filters -->
+        <div class="sidebar-filters">
+            <select class="p-input p-input-sm" value="@FilterStatus" @onchange="e => OnFilterStatusChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)">
+                <option value="">Alle statussen</option>
+                <option value="NotStarted">⬜ Niet gestart</option>
+                <option value="InProgress">🔄 Bezig</option>
+                <option value="Done">✅ Klaar</option>
+                <option value="NeedsAttention">⚠️ Aandacht nodig</option>
+                <option value="Unread">🔵 Ongelezen</option>
+                <option value="Mentioned">@("@") Genoemd</option>
+            </select>
+            <select class="p-input p-input-sm" value="@FilterAssignee" @onchange="e => OnFilterAssigneeChanged.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : 0)">
+                <option value="0">Alle personen</option>
+                @foreach (var u in AdminUsers)
+                {
+                    <option value="@u.Id">@u.Name</option>
+                }
+            </select>
+        </div>
+
+        <!-- Category tree -->
+        <div class="sidebar-categories">
+            @foreach (var cat in Categories.OrderBy(c => c.SortOrder))
+            {
+                var filteredNotes = GetFilteredNotesForCategory(cat.Id);
+                var isCollapsed = CollapsedCategories.Contains(cat.Id);
+
+                <div class="sidebar-category @(SelectedCategoryId == cat.Id ? "selected" : "")">
+                    <div class="category-header" @onclick="() => OnToggleCategory.InvokeAsync(cat.Id)">
+                        <span class="category-chevron">@(isCollapsed ? "▶" : "▼")</span>
+                        <span class="category-icon" style="color: @(cat.Color ?? "#666")">@(cat.Icon ?? "📁")</span>
+                        <span class="category-name">@cat.Name</span>
+                        <span class="category-count">@filteredNotes.Count</span>
+                        <div class="category-actions">
+                            <button class="cat-btn" @onclick:stopPropagation @onclick="() => OnEditCategory.InvokeAsync(cat)" title="Bewerken">✎</button>
+                            <button class="cat-btn" @onclick:stopPropagation @onclick="() => OnDeleteCategory.InvokeAsync(cat.Id)" title="Verwijderen">🗑</button>
+                        </div>
+                    </div>
+
+                    @if (!isCollapsed)
+                    {
+                        <div class="category-notes">
+                            @foreach (var note in filteredNotes.OrderBy(n => n.SortOrder))
+                            {
+                                var noteProgress = PlanningHelpers.GetNoteProgress(note);
+                                var isUnseen = IsNoteUnseen(note);
+                                var isMentioned = MentionedNoteIds.Contains(note.Id);
+                                <div class="sidebar-note @(SelectedNoteId == note.Id ? "selected" : "") @(isUnseen ? "note-unseen" : "") status-@note.Status.ToString().ToLower()"
+                                     @onclick="() => OnNoteSelected.InvokeAsync(note.Id)">
+                                    <div class="note-title-row">
+                                        <span class="note-status-dot" style="background: @PlanningHelpers.GetStatusColor(note.Status)" title="@PlanningHelpers.GetStatusLabel(note.Status)"></span>
+                                        @if (isUnseen)
+                                        {
+                                            <span class="unseen-dot" title="Ongelezen wijzigingen">🔵</span>
+                                        }
+                                        @if (isMentioned)
+                                        {
+                                            <span class="mention-badge" title="Je bent genoemd" style="color: #f97316; font-weight: bold;">@("@")</span>
+                                        }
+                                        <span class="note-title-text">@note.Title</span>
+                                    </div>
+                                    @if (noteProgress.Total > 0)
+                                    {
+                                        <div class="note-progress-bar">
+                                            <div class="note-progress-fill" style="width: @noteProgress.Percent%"></div>
+                                        </div>
+                                        <span class="note-progress-text">@noteProgress.Done/@noteProgress.Total</span>
+                                    }
+                                    @if (note.Deadline.HasValue)
+                                    {
+                                        var isOverdue = note.Deadline.Value < DateTime.UtcNow && note.Status != NoteStatus.Done;
+                                        <span class="note-deadline @(isOverdue ? "overdue" : "")">📅 @note.Deadline.Value.ToString("dd MMM")</span>
+                                    }
+                                </div>
+                            }
+                            <button class="add-note-btn" @onclick="() => OnAddNote.InvokeAsync(cat.Id)">
+                                + Notitie toevoegen
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Add category -->
+        <div class="sidebar-footer">
+            @if (_isAddingCategory)
+            {
+                <div class="add-cat-form">
+                    <input type="text" class="p-input p-input-sm" @bind="_newCategoryName" placeholder="Categorienaam..." @onkeydown="OnNewCategoryKey" />
+                    <div class="add-cat-actions">
+                        <button class="p-btn p-btn-sm p-btn-primary" @onclick="SaveNewCategory">Toevoegen</button>
+                        <button class="p-btn p-btn-sm p-btn-ghost" @onclick="() => _isAddingCategory = false">Annuleren</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <button class="add-cat-btn" @onclick="() => _isAddingCategory = true">
+                    + Categorie toevoegen
+                </button>
+            }
+            <a href="/admin" class="p-link-back" style="margin-top: 0.5rem;">← Terug naar admin</a>
+        </div>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public List<PlanningCategory> Categories { get; set; } = [];
+    [Parameter, EditorRequired] public List<PlanningNote> AllNotes { get; set; } = [];
+    [Parameter, EditorRequired] public List<AdminUser> AdminUsers { get; set; } = [];
+    [Parameter] public int? SelectedNoteId { get; set; }
+    [Parameter] public int? SelectedCategoryId { get; set; }
+    [Parameter] public bool Collapsed { get; set; }
+    [Parameter] public Dictionary<int, DateTime> NoteVisits { get; set; } = [];
+    [Parameter] public HashSet<int> MentionedNoteIds { get; set; } = [];
+    [Parameter] public HashSet<int> CollapsedCategories { get; set; } = [];
+    [Parameter] public string SearchQuery { get; set; } = "";
+    [Parameter] public string FilterStatus { get; set; } = "";
+    [Parameter] public int FilterAssignee { get; set; }
+
+    [Parameter] public EventCallback OnToggleCollapsed { get; set; }
+    [Parameter] public EventCallback<int> OnNoteSelected { get; set; }
+    [Parameter] public EventCallback<int> OnAddNote { get; set; }
+    [Parameter] public EventCallback<int> OnToggleCategory { get; set; }
+    [Parameter] public EventCallback<PlanningCategory> OnEditCategory { get; set; }
+    [Parameter] public EventCallback<int> OnDeleteCategory { get; set; }
+    [Parameter] public EventCallback<string> OnCategoryAdded { get; set; }
+    [Parameter] public EventCallback<string> OnSearchChanged { get; set; }
+    [Parameter] public EventCallback<string> OnFilterStatusChanged { get; set; }
+    [Parameter] public EventCallback<int> OnFilterAssigneeChanged { get; set; }
+
+    private bool _isAddingCategory;
+    private string _newCategoryName = "";
+
+    private bool IsNoteUnseen(PlanningNote note)
+    {
+        if (!NoteVisits.TryGetValue(note.Id, out var lastVisit)) return true;
+        return note.UpdatedAt > lastVisit;
+    }
+
+    private List<PlanningNote> GetFilteredNotesForCategory(int categoryId)
+    {
+        var notes = AllNotes.Where(n => n.CategoryId == categoryId);
+
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            var q = SearchQuery.ToLower();
+            notes = notes.Where(n => n.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || n.Blocks.Any(b => b.Content.Contains(q, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (FilterStatus == "Unread")
+        {
+            notes = notes.Where(n => IsNoteUnseen(n));
+        }
+        else if (FilterStatus == "Mentioned")
+        {
+            notes = notes.Where(n => MentionedNoteIds.Contains(n.Id));
+        }
+        else if (!string.IsNullOrEmpty(FilterStatus) && Enum.TryParse<NoteStatus>(FilterStatus, out var status))
+        {
+            notes = notes.Where(n => n.Status == status);
+        }
+
+        if (FilterAssignee > 0)
+        {
+            notes = notes.Where(n => n.AssignedToId == FilterAssignee);
+        }
+
+        return notes.ToList();
+    }
+
+    private async Task SaveNewCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_newCategoryName)) return;
+        var name = _newCategoryName.Trim();
+        _newCategoryName = "";
+        _isAddingCategory = false;
+        await OnCategoryAdded.InvokeAsync(name);
+    }
+
+    private async Task OnNewCategoryKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SaveNewCategory();
+        if (e.Key == "Escape") _isAddingCategory = false;
+    }
+}
+

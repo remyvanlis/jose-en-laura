@@ -1,0 +1,457 @@
+@page "/checkin"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject ProtectedLocalStorage LocalStorage
+
+<PageTitle>Check-in - José &amp; Laura</PageTitle>
+
+<div class="checkin-page">
+    @if (_isLoading)
+    {
+        <div class="checkin-loading">
+            <div class="checkin-spinner"></div>
+            <span>Laden...</span>
+        </div>
+    }
+    else if (_currentUser is null)
+    {
+        <div class="checkin-login">
+            <div class="checkin-login-card">
+                <div class="checkin-login-header">
+                    <h1>José <span class="amp">&amp;</span> Laura</h1>
+                    <p>Check-in</p>
+                </div>
+                <div class="checkin-login-body">
+                    <div class="form-group">
+                        <label>Wie ben je?</label>
+                        <select class="form-input" style="font-size: 1.1rem; padding: 0.8rem;" @bind="_selectedUserName">
+                            <option value="">-- Kies je naam --</option>
+                            @foreach (var user in _adminUsers)
+                            {
+                                <option value="@user.Name">@user.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Wachtwoord</label>
+                        <input type="password" class="form-input" style="font-size: 1.1rem; padding: 0.8rem;"
+                               @bind="_password" @bind:event="oninput"
+                               @onkeydown="OnLoginKeyDown"
+                               placeholder="Voer je wachtwoord in..." />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_loginError))
+                    {
+                        <div class="checkin-error">@_loginError</div>
+                    }
+                    <button class="checkin-btn-primary" @onclick="HandleLogin">Inloggen</button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Phase banner -->
+        <div class="checkin-phase-banner @GetPhaseClass()">
+            <div class="checkin-phase-icon">@GetPhaseIcon()</div>
+            <div class="checkin-phase-info">
+                <span class="checkin-phase-label">Nu bezig</span>
+                <span class="checkin-phase-name">@GetPhaseName()</span>
+            </div>
+            <div class="checkin-phase-stats">
+                <span class="checkin-phase-count">@_checkedInCount / @_totalExpected</span>
+                <span class="checkin-phase-count-label">ingecheckt</span>
+            </div>
+        </div>
+
+        <!-- Search bar (sticky) -->
+        <div class="checkin-search-container">
+            <div class="checkin-search-wrapper">
+                <span class="checkin-search-icon">&#128269;</span>
+                <input type="text" class="checkin-search-input"
+                       @ref="_searchInput"
+                       @bind="_searchText" @bind:event="oninput"
+                       placeholder="Typ een naam..." autocomplete="off" />
+                @if (!string.IsNullOrWhiteSpace(_searchText))
+                {
+                    <button class="checkin-search-clear" @onclick="ClearSearch">&#10005;</button>
+                }
+            </div>
+        </div>
+
+        <!-- Guest list -->
+        <div class="checkin-list">
+            @{
+                var filteredGuests = GetFilteredGuests();
+                var checkedIn = filteredGuests.Where(g => IsCheckedInForCurrentPhase(g)).ToList();
+                var notCheckedIn = filteredGuests.Where(g => !IsCheckedInForCurrentPhase(g)).ToList();
+            }
+
+            @if (filteredGuests.Count == 0 && !string.IsNullOrWhiteSpace(_searchText))
+            {
+                <div class="checkin-empty">
+                    <span style="font-size: 2rem;">🔍</span>
+                    <p>Geen gasten gevonden voor "@_searchText"</p>
+                </div>
+            }
+            else if (filteredGuests.Count == 0)
+            {
+                <div class="checkin-empty">
+                    <span style="font-size: 2rem;">📋</span>
+                    <p>Geen gasten verwacht voor @GetPhaseName().ToLower()</p>
+                </div>
+            }
+            else
+            {
+                <!-- Not checked in first (these are the ones you're looking for) -->
+                @foreach (var guest in notCheckedIn)
+                {
+                    var g = guest;
+                    <div class="checkin-guest-row" @onclick="() => ToggleCheckIn(g)">
+                        <div class="checkin-guest-check not-checked">
+                            <span>&#9711;</span>
+                        </div>
+                        <div class="checkin-guest-info">
+                            <span class="checkin-guest-name">@guest.FullName</span>
+                            <span class="checkin-guest-meta">@FormatInvitedFor(guest.InvitedFor)</span>
+                        </div>
+                    </div>
+                }
+
+                @if (checkedIn.Count > 0 && notCheckedIn.Count > 0)
+                {
+                    <div class="checkin-divider">
+                        <span>&#10003; Ingecheckt (@checkedIn.Count)</span>
+                    </div>
+                }
+
+                @foreach (var guest in checkedIn)
+                {
+                    var g = guest;
+                    <div class="checkin-guest-row checked" @onclick="() => ToggleCheckIn(g)">
+                        <div class="checkin-guest-check is-checked">
+                            <span>&#10003;</span>
+                        </div>
+                        <div class="checkin-guest-info">
+                            <span class="checkin-guest-name">@guest.FullName</span>
+                            <span class="checkin-guest-meta">
+                                @FormatCheckInTime(guest)
+                            </span>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Bottom bar -->
+        <div class="checkin-bottom-bar">
+            <span class="checkin-bottom-user">@_currentUser.Name</span>
+            <a href="/admin" class="checkin-bottom-link">Admin</a>
+            <button class="checkin-bottom-logout" @onclick="Logout">Uitloggen</button>
+        </div>
+    }
+</div>
+
+@code {
+    private const string SessionKey = "admin_session";
+    private bool _isLoading = true;
+    private List<AdminUser> _adminUsers = [];
+    private AdminUser? _currentUser;
+    private string _selectedUserName = "";
+    private string _password = "";
+    private string _loginError = "";
+
+    private List<Guest> _guests = [];
+    private string _searchText = "";
+    private ElementReference _searchInput;
+    private int _checkedInCount;
+    private int _totalExpected;
+
+    // Wedding day schedule (May 16, 2026 — local times)
+    private static readonly DateTime DinnerStart = new(2026, 5, 16, 14, 30, 0);
+    private static readonly DateTime PartyStart = new(2026, 5, 16, 19, 30, 0);
+
+    private enum EventPhase { Ceremony, Dinner, Party }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _adminUsers = await db.AdminUsers.ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var result = await LocalStorage.GetAsync<AdminSession>(SessionKey);
+            if (result is { Success: true, Value: not null })
+            {
+                var session = result.Value;
+                if (session.ExpiresUtc > DateTime.UtcNow)
+                {
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var user = await db.AdminUsers.FindAsync(session.UserId);
+                    if (user is not null)
+                    {
+                        _currentUser = user;
+                        await LoadGuests();
+                    }
+                }
+                else
+                {
+                    await LocalStorage.DeleteAsync(SessionKey);
+                }
+            }
+        }
+        catch { }
+
+        _isLoading = false;
+        StateHasChanged();
+
+        if (_currentUser is not null)
+        {
+            await Task.Yield();
+            try { await _searchInput.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        _loginError = "";
+        if (string.IsNullOrWhiteSpace(_selectedUserName))
+        {
+            _loginError = "Selecteer eerst je naam.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_password) || _password.Length < 4)
+        {
+            _loginError = "Wachtwoord moet minimaal 4 tekens zijn.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.AdminUsers.FirstOrDefaultAsync(u => u.Name == _selectedUserName);
+        if (user is null) return;
+
+        if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            _loginError = "Stel eerst een wachtwoord in via het admin portaal.";
+            return;
+        }
+
+        if (BCrypt.Net.BCrypt.Verify(_password, user.PasswordHash))
+        {
+            _currentUser = user;
+            var session = new AdminSession(user.Id, DateTime.UtcNow.AddDays(7));
+            await LocalStorage.SetAsync(SessionKey, session);
+            await LoadGuests();
+        }
+        else
+        {
+            _loginError = "Wachtwoord onjuist.";
+        }
+    }
+
+    private async Task OnLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await HandleLogin();
+    }
+
+    private async Task Logout()
+    {
+        _currentUser = null;
+        _password = "";
+        _selectedUserName = "";
+        await LocalStorage.DeleteAsync(SessionKey);
+    }
+
+    private async Task LoadGuests()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _guests = await db.Guests
+            .Include(g => g.Attendance)
+            .OrderBy(g => g.FullName)
+            .ToListAsync();
+        UpdateCounts();
+    }
+
+    private void UpdateCounts()
+    {
+        var phase = GetCurrentPhase();
+        var expected = GetGuestsForPhase(phase);
+        _totalExpected = expected.Count;
+        _checkedInCount = expected.Count(g => IsCheckedInForPhase(g, phase));
+    }
+
+    private EventPhase GetCurrentPhase()
+    {
+        var now = DateTime.Now;
+        if (now >= PartyStart) return EventPhase.Party;
+        if (now >= DinnerStart) return EventPhase.Dinner;
+        return EventPhase.Ceremony;
+    }
+
+    private string GetPhaseName()
+    {
+        return GetCurrentPhase() switch
+        {
+            EventPhase.Ceremony => "Ceremonie",
+            EventPhase.Dinner => "Diner",
+            EventPhase.Party => "Feest",
+            _ => "Ceremonie"
+        };
+    }
+
+    private string GetPhaseIcon()
+    {
+        return GetCurrentPhase() switch
+        {
+            EventPhase.Ceremony => "\u26EA",
+            EventPhase.Dinner => "\U0001F37D",
+            EventPhase.Party => "\U0001F389",
+            _ => "\u26EA"
+        };
+    }
+
+    private string GetPhaseClass()
+    {
+        return GetCurrentPhase() switch
+        {
+            EventPhase.Ceremony => "phase-ceremony",
+            EventPhase.Dinner => "phase-dinner",
+            EventPhase.Party => "phase-party",
+            _ => "phase-ceremony"
+        };
+    }
+
+    private List<Guest> GetGuestsForPhase(EventPhase phase)
+    {
+        return phase switch
+        {
+            EventPhase.Ceremony => _guests.Where(g =>
+                g.Attendance is not null && g.Attendance.AttendingCeremony).ToList(),
+            EventPhase.Dinner => _guests.Where(g =>
+                g.Attendance is not null && g.Attendance.AttendingDinner).ToList(),
+            EventPhase.Party => _guests.Where(g =>
+                g.Attendance is not null && g.Attendance.AttendingEvening).ToList(),
+            _ => []
+        };
+    }
+
+    private bool IsCheckedInForPhase(Guest guest, EventPhase phase)
+    {
+        if (guest.Attendance is null) return false;
+        return phase switch
+        {
+            EventPhase.Ceremony => guest.Attendance.CheckedInCeremonyAt.HasValue,
+            EventPhase.Dinner => guest.Attendance.CheckedInDinnerAt.HasValue,
+            EventPhase.Party => guest.Attendance.CheckedInPartyAt.HasValue,
+            _ => false
+        };
+    }
+
+    private bool IsCheckedInForCurrentPhase(Guest guest)
+    {
+        return IsCheckedInForPhase(guest, GetCurrentPhase());
+    }
+
+    private string FormatCheckInTime(Guest guest)
+    {
+        var phase = GetCurrentPhase();
+        DateTime? checkedAt = phase switch
+        {
+            EventPhase.Ceremony => guest.Attendance?.CheckedInCeremonyAt,
+            EventPhase.Dinner => guest.Attendance?.CheckedInDinnerAt,
+            EventPhase.Party => guest.Attendance?.CheckedInPartyAt,
+            _ => null
+        };
+        if (checkedAt.HasValue)
+        {
+            return checkedAt.Value.ToLocalTime().ToString("HH:mm");
+        }
+        return FormatInvitedFor(guest.InvitedFor);
+    }
+
+    private List<Guest> GetFilteredGuests()
+    {
+        var phase = GetCurrentPhase();
+        var guests = GetGuestsForPhase(phase);
+
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            guests = guests.Where(g =>
+                g.FullName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        return guests;
+    }
+
+    private async Task ToggleCheckIn(Guest guest)
+    {
+        if (guest.Attendance is null) return;
+
+        var phase = GetCurrentPhase();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var attendance = await db.Attendances.FindAsync(guest.Attendance.Id);
+        if (attendance is null) return;
+
+        switch (phase)
+        {
+            case EventPhase.Ceremony:
+                attendance.CheckedInCeremonyAt = attendance.CheckedInCeremonyAt.HasValue
+                    ? null : DateTime.UtcNow;
+                break;
+            case EventPhase.Dinner:
+                attendance.CheckedInDinnerAt = attendance.CheckedInDinnerAt.HasValue
+                    ? null : DateTime.UtcNow;
+                break;
+            case EventPhase.Party:
+                attendance.CheckedInPartyAt = attendance.CheckedInPartyAt.HasValue
+                    ? null : DateTime.UtcNow;
+                break;
+        }
+
+        await db.SaveChangesAsync();
+
+        // Update local state
+        switch (phase)
+        {
+            case EventPhase.Ceremony:
+                guest.Attendance.CheckedInCeremonyAt = attendance.CheckedInCeremonyAt;
+                break;
+            case EventPhase.Dinner:
+                guest.Attendance.CheckedInDinnerAt = attendance.CheckedInDinnerAt;
+                break;
+            case EventPhase.Party:
+                guest.Attendance.CheckedInPartyAt = attendance.CheckedInPartyAt;
+                break;
+        }
+
+        UpdateCounts();
+    }
+
+    private void ClearSearch()
+    {
+        _searchText = "";
+    }
+
+    private static string FormatInvitedFor(InvitedForType type) => type switch
+    {
+        InvitedForType.DayGuest => "Daggast",
+        InvitedForType.Ceremony => "Ceremonie",
+        InvitedForType.CeremonyAndEvening => "Ceremonie & Avond",
+        InvitedForType.Evening => "Avondfeest",
+        _ => type.ToString()
+    };
+
+    private sealed record AdminSession(int UserId, DateTime ExpiresUtc);
+}
+
+
+

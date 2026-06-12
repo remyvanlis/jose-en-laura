@@ -1,0 +1,3364 @@
+@page "/admin"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using JoseEnLaura.Data
+@using JoseEnLaura.Data.Models
+@inject IDbContextFactory<WeddingDbContext> DbFactory
+@inject ProtectedLocalStorage LocalStorage
+@inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>Admin — José & Laura</PageTitle>
+
+<div class="admin-page">
+    @if (_isBusy)
+    {
+        <div class="admin-loading-overlay">
+            <div class="admin-loading-spinner"></div>
+            <span>Bezig...</span>
+        </div>
+    }
+    @if (_isLoading)
+    {
+        <div class="admin-login-wrapper">
+            <div class="admin-login-card">
+                <div class="admin-login-header">
+                    <h1>José <span class="amp">&amp;</span> Laura</h1>
+                    <p>Even laden...</p>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_currentUser is null)
+    {
+        <!-- ===================== LOGIN ===================== -->
+        <div class="admin-login-wrapper">
+            <div class="admin-login-card">
+                <div class="admin-login-header">
+                    <h1>José <span class="amp">&amp;</span> Laura</h1>
+                    <p>Beheerportaal</p>
+                </div>
+                <div class="admin-login-body">
+                    <div class="form-group">
+                        <label>Wie ben je?</label>
+                        <select class="form-input" @bind="_selectedUserName">
+                            <option value="">— Kies je naam —</option>
+                            @foreach (var user in _adminUsers)
+                            {
+                                <option value="@user.Name">@user.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>@(_selectedUserNeedsSetup ? "Kies een wachtwoord" : "Wachtwoord")</label>
+                        <input type="password" class="form-input" @bind="_password" @bind:event="oninput" @onkeydown="OnLoginKeyDown" placeholder="@(_selectedUserNeedsSetup ? "Kies een nieuw wachtwoord..." : "Voer je wachtwoord in...")" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_loginError))
+                    {
+                        <div class="admin-error">@_loginError</div>
+                    }
+                    <button class="btn-rsvp" @onclick="HandleLogin">Inloggen</button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- ===================== ADMIN PANEL ===================== -->
+        <div class="admin-panel">
+            <div class="admin-header">
+                <h2>Beheerportaal</h2>
+                <div class="admin-header-right">
+                    <span class="admin-user-badge">
+                        @_currentUser.Name
+                        @if (_currentUser.Role == AdminRole.CeremonyMaster)
+                        {
+                            <small>(Ceremoniemeester)</small>
+                        }
+                    </span>
+                    <button class="btn-small btn-outline" @onclick="Logout">Uitloggen</button>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="admin-tabs">
+                <button class="admin-tab @(_activeTab == "guests" ? "active" : "")" @onclick='() => _activeTab = "guests"'>
+                    &#128101; Gastenlijst
+                </button>
+                <button class="admin-tab @(_activeTab == "attendance" ? "active" : "")" @onclick='() => _activeTab = "attendance"'>
+                    &#9989; Aanwezigheid
+                </button>
+                <button class="admin-tab @(_activeTab == "visitors" ? "active" : "")" @onclick='() => SwitchToVisitors()'>
+                    &#128065; Bezoekers
+                </button>
+                <button class="admin-tab @(_activeTab == "rsvp" ? "active" : "")" @onclick='() => _activeTab = "rsvp"'>
+                    &#9998; RSVP Beheer
+                </button>
+                <button class="admin-tab @(_activeTab == "faq" ? "active" : "")" @onclick='() => _activeTab = "faq"'>
+                    &#10067; FAQ
+                </button>
+                <button class="admin-tab @(_activeTab == "texts" ? "active" : "")" @onclick='() => SwitchToTexts()'>
+                    &#128221; Teksten
+                </button>
+                <button class="admin-tab @(_activeTab == "schedule" ? "active" : "")" @onclick='() => SwitchToSchedule()'>
+                    &#128197; Programma
+                </button>
+                <button class="admin-tab @(_activeTab == "contacts" ? "active" : "")" @onclick='() => SwitchToContacts()'>
+                    &#128222; Contactgegevens
+                </button>
+                <button class="admin-tab @(_activeTab == "locations" ? "active" : "")" @onclick='() => SwitchToLocations()'>
+                    &#128205; Locaties
+                </button>
+                <button class="admin-tab @(_activeTab == "dresscode" ? "active" : "")" @onclick='() => SwitchToDressCode()'>
+                    &#127812; Dresscode
+                </button>
+                <button class="admin-tab @(_activeTab == "images" ? "active" : "")" @onclick='() => SwitchToImages()'>
+                    &#128247; Afbeeldingen
+                </button>
+                <button class="admin-tab @(_activeTab == "photos" ? "active" : "")" @onclick='() => SwitchToPhotos()'>
+                    &#128248; Foto Sessies
+                </button>
+                <a href="/planning" class="admin-tab" style="text-decoration: none; display: inline-flex; align-items: center;">
+                    📋 Planning
+                </a>
+                <a href="/checkin" class="admin-tab" style="text-decoration: none; display: inline-flex; align-items: center;">
+                    📋 Check-in
+                </a>
+                @if (_currentUser.Role == AdminRole.CeremonyMaster)
+                {
+                    <button class="admin-tab @(_activeTab == "plays" ? "active" : "")" @onclick='() => _activeTab = "plays"'>
+                        &#127917; Acts & Spelletjes
+                    </button>
+                }
+            </div>
+
+            <!-- TAB: Guest Management -->
+            @if (_activeTab == "guests")
+            {
+                <div class="admin-card">
+                    <h3>Gast toevoegen</h3>
+                    <div class="admin-add-form">
+                        <div class="form-group">
+                            <label>Volledige naam</label>
+                            <input type="text" class="form-input" @ref="_guestNameInput" @bind="_newGuestName" @bind:event="oninput" @onkeydown="OnGuestNameKeyDown" placeholder="Voornaam Achternaam" data-guest-name-input />
+                        </div>
+                        <div class="form-group">
+                            <label>Uitgenodigd voor</label>
+                            <select class="form-input" @bind="_newGuestInvitedFor">
+                                <option value="@InvitedForType.DayGuest">Daggast (Hele dag)</option>
+                                <option value="@InvitedForType.CeremonyAndEvening">Ceremonie &amp; Avondfeest</option>
+                                <option value="@InvitedForType.Ceremony">Alleen Ceremonie</option>
+                                <option value="@InvitedForType.Evening">Alleen Avondfeest</option>
+                            </select>
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddGuest">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_guestMessage))
+                    {
+                        <div class="admin-success">@_guestMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Alle gasten (@_guests.Count)</h3>
+                    @if (_guests.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen gasten toegevoegd.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Naam</th>
+                                        <th>Uitgenodigd voor</th>
+                                        <th>RSVP</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var guest in _guests)
+                                    {
+                                        <tr>
+                                            @if (_editingGuestId == guest.Id)
+                                            {
+                                                <td>
+                                                    <input type="text" class="form-input form-input-sm" @bind="_editGuestName" />
+                                                </td>
+                                                <td>
+                                                    <select class="form-input form-input-sm" @bind="_editGuestInvitedFor">
+                                                        <option value="@InvitedForType.DayGuest">Daggast</option>
+                                                        <option value="@InvitedForType.CeremonyAndEvening">Ceremonie &amp; Avond</option>
+                                                        <option value="@InvitedForType.Ceremony">Ceremonie</option>
+                                                        <option value="@InvitedForType.Evening">Avondfeest</option>
+                                                    </select>
+                                                </td>
+                                                <td>—</td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-save" @onclick="SaveGuestEdit" title="Opslaan">&#10003;</button>
+                                                    <button class="btn-icon btn-cancel" @onclick="CancelGuestEdit" title="Annuleren">&#10007;</button>
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td>@guest.FullName</td>
+                                                <td>
+                                                    <span class="badge badge-@guest.InvitedFor.ToString().ToLower()">
+                                                        @FormatInvitedFor(guest.InvitedFor)
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    @if (guest.Attendance is not null)
+                                                    {
+                                                        <span class="badge badge-confirmed">&#10003; Bevestigd</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge badge-pending">In afwachting</span>
+                                                    }
+                                                </td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-edit" @onclick="() => StartEditGuest(guest)" title="Bewerken">&#9998;</button>
+                                                    <button class="btn-icon btn-delete" @onclick="() => DeleteGuest(guest.Id)" title="Verwijderen">&#128465;</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Attendance Overview -->
+            @if (_activeTab == "attendance")
+            {
+                <div class="admin-card">
+                    <h3>Aanwezigheid overzicht</h3>
+                    @{ var allAttendances = _guests.Where(g => g.Attendance is not null).ToList(); }
+                    @{ var attendances = string.IsNullOrWhiteSpace(_attendanceSearch)
+                        ? allAttendances
+                        : allAttendances.Where(g => g.FullName.Contains(_attendanceSearch, StringComparison.OrdinalIgnoreCase)).ToList(); }
+                    @if (allAttendances.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen RSVPs ontvangen.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-stats">
+                            <div class="stat-card">
+                                <div class="stat-number">@allAttendances.Count</div>
+                                <div class="stat-label">RSVPs</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">@allAttendances.Count(g => g.Attendance!.AttendingCeremony)</div>
+                                <div class="stat-label">Ceremonie</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">@allAttendances.Count(g => g.Attendance!.AttendingDinner)</div>
+                                <div class="stat-label">Diner</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">@allAttendances.Count(g => g.Attendance!.AttendingEvening)</div>
+                                <div class="stat-label">Avondfeest</div>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <input type="text" class="form-input" @bind="_attendanceSearch" @bind:event="oninput" placeholder="&#128269; Zoek op naam..." />
+                        </div>
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Naam</th>
+                                        <th>Ceremonie</th>
+                                        <th>Diner</th>
+                                        <th>Avondfeest</th>
+                                        <th>Dieetwensen</th>
+                                        <th>Bericht</th>
+                                        <th>Ingediend</th>
+                                        <th>Bijgewerkt</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var guest in attendances)
+                                    {
+                                        <tr>
+                                            <td><strong>@guest.FullName</strong></td>
+                                            <td>@(guest.Attendance!.AttendingCeremony ? "✅ Ja" : "❌ Nee")</td>
+                                            <td>@(guest.Attendance!.AttendingDinner ? "✅ Ja" : "❌ Nee")</td>
+                                            <td>@(guest.Attendance!.AttendingEvening ? "✅ Ja" : "❌ Nee")</td>
+                                            <td>@(string.IsNullOrEmpty(guest.Attendance.DietaryNotes) ? "—" : guest.Attendance.DietaryNotes)</td>
+                                            <td>@(string.IsNullOrEmpty(guest.Attendance.Message) ? "—" : guest.Attendance.Message)</td>
+                                            <td style="white-space: nowrap; font-size: 0.85rem;">@(guest.Attendance.SubmittedAt == default ? "—" : guest.Attendance.SubmittedAt.ToLocalTime().ToString("dd-MM-yyyy HH:mm"))</td>
+                                            <td style="white-space: nowrap; font-size: 0.85rem;">@(guest.Attendance.UpdatedAt.HasValue ? guest.Attendance.UpdatedAt.Value.ToLocalTime().ToString("dd-MM-yyyy HH:mm") : "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (attendances.Count == 0 && !string.IsNullOrWhiteSpace(_attendanceSearch))
+                        {
+                            <p class="admin-empty" style="margin-top: 1rem;">Geen resultaten voor "@_attendanceSearch"</p>
+                        }
+                    }
+                </div>
+            }
+
+            <!-- TAB: Plays (CeremonyMaster only) -->
+            @if (_activeTab == "plays" && _currentUser.Role == AdminRole.CeremonyMaster)
+            {
+                <div class="admin-card">
+                    <h3>Acts & Spelletjes (alleen zichtbaar voor ceremoniemeesters)</h3>
+                    @{ var plays = _guests.Where(g => g.Attendance?.Play is not null).ToList(); }
+                    @if (plays.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen acts of spelletjes aangemeld.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Naam</th>
+                                        <th>Duur (min)</th>
+                                        <th>Beamer nodig</th>
+                                        <th>Benodigdheden</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var guest in plays)
+                                    {
+                                        <tr>
+                                            <td><strong>@guest.FullName</strong></td>
+                                            <td>@guest.Attendance!.Play!.DurationMinutes min</td>
+                                            <td>@(guest.Attendance.Play.NeedsBeamer ? "✅ Ja" : "❌ Nee")</td>
+                                            <td>@(string.IsNullOrEmpty(guest.Attendance.Play.Requirements) ? "—" : guest.Attendance.Play.Requirements)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: RSVP Management -->
+            @if (_activeTab == "rsvp")
+            {
+                <div class="admin-card">
+                    <h3>RSVP invullen / aanpassen</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1.5rem;">
+                        Vul hier de RSVP in voor een gast, of pas een bestaande RSVP aan. Handig als iemand belt om af/bij te zeggen!
+                    </p>
+
+                    <div class="form-group" style="position: relative;">
+                        <label>Zoek een gast</label>
+                        <input type="text" class="form-input" @bind="_rsvpGuestSearch" @bind:event="oninput" @bind:after="OnRsvpSearchChanged" @onfocus="() => _showRsvpSuggestions = true" placeholder="&#128269; Typ een naam..." autocomplete="off" />
+                        @if (_showRsvpSuggestions && !string.IsNullOrWhiteSpace(_rsvpGuestSearch))
+                        {
+                            var filtered = _guests.Where(g => g.FullName.Contains(_rsvpGuestSearch, StringComparison.OrdinalIgnoreCase)).Take(10).ToList();
+                            @if (filtered.Count > 0)
+                            {
+                                <div class="rsvp-suggestions" style="position: absolute; z-index: 10; background: white; border: 1px solid var(--color-cream-dark); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 250px; overflow-y: auto; width: 100%; margin-top: 2px;">
+                                    @foreach (var guest in filtered)
+                                    {
+                                        <div style="padding: 0.6rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--color-cream-dark);"
+                                             @onclick="() => SelectRsvpGuest(guest)"
+                                             @onmousedown:preventDefault>
+                                            <span>@guest.FullName</span>
+                                            <span class="badge badge-@guest.InvitedFor.ToString().ToLower()" style="font-size: 0.75rem;">@FormatInvitedFor(guest.InvitedFor)</span>
+                                            @if (guest.Attendance is not null)
+                                            {
+                                                <span class="badge badge-confirmed" style="font-size: 0.75rem;">✅</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    @if (_rsvpSelectedGuestId > 0)
+                    {
+                        var rsvpGuest = _guests.FirstOrDefault(g => g.Id == _rsvpSelectedGuestId);
+                        @if (rsvpGuest is not null)
+                        {
+                            <div class="guest-selected-card" style="margin-bottom: 1.5rem;">
+                                <div class="guest-selected-info">
+                                    <strong>@rsvpGuest.FullName</strong>
+                                    <span class="badge badge-@rsvpGuest.InvitedFor.ToString().ToLower()">@FormatInvitedFor(rsvpGuest.InvitedFor)</span>
+                                    @if (rsvpGuest.Attendance is not null)
+                                    {
+                                        <span class="badge badge-confirmed">Heeft al RSVP</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="form-group attendance-options">
+                                <label>Waarbij is deze gast aanwezig?</label>
+                                <p class="attendance-hint">Tik op een kaart om te wisselen tussen aanwezig en niet aanwezig</p>
+                                <div class="checkbox-group">
+                                    @if (rsvpGuest.InvitedFor is InvitedForType.Ceremony or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest)
+                                    {
+                                        <div class="checkbox-card @(_rsvpCeremony ? "selected attending" : "not-attending")" @onclick="() => _rsvpCeremony = !_rsvpCeremony">
+                                            <span class="checkbox-icon">&#9962;</span>
+                                            <span class="checkbox-event-name">Ceremonie</span>
+                                            <small>14:00</small>
+                                            <span class="attendance-status">
+                                                @if (_rsvpCeremony)
+                                                {
+                                                    <span class="status-badge status-yes">✓ Aanwezig</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="status-badge status-no">✗ Niet aanwezig</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    }
+                                    @if (rsvpGuest.InvitedFor is InvitedForType.DayGuest)
+                                    {
+                                        <div class="checkbox-card @(_rsvpDinner ? "selected attending" : "not-attending")" @onclick="() => _rsvpDinner = !_rsvpDinner">
+                                            <span class="checkbox-icon">&#127869;</span>
+                                            <span class="checkbox-event-name">Diner</span>
+                                            <small>17:30</small>
+                                            <span class="attendance-status">
+                                                @if (_rsvpDinner)
+                                                {
+                                                    <span class="status-badge status-yes">✓ Aanwezig</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="status-badge status-no">✗ Niet aanwezig</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    }
+                                    @if (rsvpGuest.InvitedFor is InvitedForType.Evening or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest)
+                                    {
+                                        <div class="checkbox-card @(_rsvpEvening ? "selected attending" : "not-attending")" @onclick="() => _rsvpEvening = !_rsvpEvening">
+                                            <span class="checkbox-icon">&#127878;</span>
+                                            <span class="checkbox-event-name">Avondfeest</span>
+                                            <small>19:00</small>
+                                            <span class="attendance-status">
+                                                @if (_rsvpEvening)
+                                                {
+                                                    <span class="status-badge status-yes">✓ Aanwezig</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="status-badge status-no">✗ Niet aanwezig</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Dieetwensen of allergieën</label>
+                                <textarea class="form-input form-textarea" rows="2" @bind="_rsvpDietary" placeholder="Bijv. vegetarisch, glutenvrij..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Bericht (optioneel)</label>
+                                <textarea class="form-input form-textarea" rows="2" @bind="_rsvpMessage" placeholder="Eventueel bericht..."></textarea>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(_rsvpSaveMessage))
+                            {
+                                <div class="admin-success">@_rsvpSaveMessage</div>
+                            }
+                            @if (!string.IsNullOrEmpty(_rsvpSaveError))
+                            {
+                                <div class="admin-error">@_rsvpSaveError</div>
+                            }
+
+                            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                                <button class="btn-rsvp btn-compact" @onclick="SaveAdminRsvp">&#128190; RSVP Opslaan</button>
+                                @if (rsvpGuest.Attendance is not null)
+                                {
+                                    <button class="btn-small btn-outline" style="color: #c0392b; border-color: #c0392b;" @onclick="DeleteAdminRsvp">&#128465; RSVP Verwijderen</button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            <!-- TAB: FAQ Management -->
+            @if (_activeTab == "faq")
+            {
+                <div class="admin-card">
+                    <h3>FAQ toevoegen</h3>
+                    <div class="admin-add-form" style="flex-direction: column; align-items: start;">
+                        <div class="form-group">
+                            <label>🇳🇱 Vraag</label>
+                            <input type="text" class="form-input" @bind="_newFaqQuestion" placeholder="Stel hier je vraag..." />
+                        </div>
+                        <div class="form-group">
+                            <label>🇬🇧 Question (English)</label>
+                            <input type="text" class="form-input" style="border-left: 3px solid var(--color-sage-light);" @bind="_newFaqQuestionEn" placeholder="English translation..." />
+                        </div>
+                        <div class="form-group">
+                            <label>🇳🇱 Antwoord (gebruik nieuwe regels voor alinea's)</label>
+                            <textarea class="form-input form-textarea" rows="3" @bind="_newFaqAnswer" placeholder="Het antwoord..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>🇬🇧 Answer (English)</label>
+                            <textarea class="form-input form-textarea" rows="3" style="border-left: 3px solid var(--color-sage-light);" @bind="_newFaqAnswerEn" placeholder="English translation..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Index</label>
+                            <input type="number" class="form-input" @bind="_newFaqOrder" min="0" style="max-width: 120px;" />
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddFaq">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_faqMessage))
+                    {
+                        <div class="admin-success">@_faqMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Alle FAQ's (@_faqItems.Count)</h3>
+                    @if (_faqItems.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen FAQ's.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40px;">#</th>
+                                        <th>🇳🇱 Vraag</th>
+                                        <th>🇬🇧 Question</th>
+                                        <th>🇳🇱 Antwoord</th>
+                                        <th>🇬🇧 Answer</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var faq in _faqItems)
+                                    {
+                                        <tr>
+                                            @if (_editingFaqId == faq.Id)
+                                            {
+                                                <td>
+                                                    <input type="number" class="form-input form-input-sm" @bind="_editFaqOrder" style="width: 60px;" />
+                                                </td>
+                                                <td>
+                                                    <input type="text" class="form-input form-input-sm" @bind="_editFaqQuestion" />
+                                                </td>
+                                                <td>
+                                                    <input type="text" class="form-input form-input-sm" style="border-left: 3px solid var(--color-sage-light);" @bind="_editFaqQuestionEn" placeholder="English..." />
+                                                </td>
+                                                <td>
+                                                    <textarea class="form-input form-input-sm" rows="3" @bind="_editFaqAnswer"></textarea>
+                                                </td>
+                                                <td>
+                                                    <textarea class="form-input form-input-sm" rows="3" style="border-left: 3px solid var(--color-sage-light);" @bind="_editFaqAnswerEn" placeholder="English..."></textarea>
+                                                </td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-save" @onclick="SaveFaqEdit" title="Opslaan">&#10003;</button>
+                                                    <button class="btn-icon btn-cancel" @onclick="CancelFaqEdit" title="Annuleren">&#10007;</button>
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td>@faq.SortOrder</td>
+                                                <td>@faq.Question</td>
+                                                <td style="color: var(--color-text-light); font-size: 0.9rem;">@(string.IsNullOrWhiteSpace(faq.QuestionEn) ? "—" : faq.QuestionEn)</td>
+                                                <td style="max-width: 200px; white-space: pre-wrap; font-size: 0.9rem;">@faq.Answer</td>
+                                                <td style="max-width: 200px; white-space: pre-wrap; font-size: 0.9rem; color: var(--color-text-light);">@(string.IsNullOrWhiteSpace(faq.AnswerEn) ? "—" : faq.AnswerEn)</td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-edit" @onclick="() => StartEditFaq(faq)" title="Bewerken">&#9998;</button>
+                                                    <button class="btn-icon btn-delete" @onclick="() => DeleteFaq(faq.Id)" title="Verwijderen">&#128465;</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Site Texts -->
+            @if (_activeTab == "texts")
+            {
+                @if (WeddingDateText is not null)
+                {
+                    <div class="admin-card">
+                        <h3>&#128141; Trouwdatum</h3>
+                        <p style="color: var(--color-text-light); margin-bottom: 1rem;">
+                            Stel hier de trouwdatum in. Deze datum wordt gebruikt voor de aftelteller op de homepagina. De zichtbare datumteksten (bijv. "17 oktober 2026") pas je hieronder aan.
+                        </p>
+                        <div class="form-group" style="max-width: 280px;">
+                            <input type="date" class="form-input"
+                                   value="@WeddingDateText.Value"
+                                   @oninput="@(EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnTextInput(WeddingDateText, e)))" />
+                        </div>
+                    </div>
+                }
+                <div class="admin-card">
+                    <h3>Website teksten</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1.5rem;">
+                        Pas hier de teksten op de website aan. Wijzigingen worden automatisch opgeslagen. Vul ook de Engelse vertaling in voor meertalige ondersteuning.
+                    </p>
+
+                    @if (!string.IsNullOrEmpty(_textsMessage))
+                    {
+                        <div class="admin-success" style="transition: opacity 0.3s;">@_textsMessage</div>
+                    }
+
+                    @foreach (var text in _siteTexts.Where(t => t.Key != "wedding.date"))
+                    {
+                        var capturedText = text;
+                        <div class="form-group" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--color-cream-dark);">
+                            <label style="font-weight: 600; color: var(--color-terracotta-dark);">@text.Label</label>
+                            <small style="display: block; color: var(--color-text-light); margin-bottom: 0.3rem; font-family: monospace;">@text.Key</small>
+                            
+                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.3rem;">
+                                <span style="font-size: 1rem;">🇳🇱</span>
+                                <span style="font-size: 0.8rem; color: var(--color-text-light); font-weight: 500;">Nederlands</span>
+                            </div>
+                            @if (text.Value.Length > 80)
+                            {
+                                <textarea class="form-input form-textarea" rows="3"
+                                          value="@capturedText.Value"
+                                          @oninput="@(EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnTextInput(capturedText, e)))"></textarea>
+                            }
+                            else
+                            {
+                                <input type="text" class="form-input"
+                                       value="@capturedText.Value"
+                                       @oninput="@(EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnTextInput(capturedText, e)))" />
+                            }
+                            
+                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.6rem; margin-bottom: 0.3rem;">
+                                <span style="font-size: 1rem;">🇬🇧</span>
+                                <span style="font-size: 0.8rem; color: var(--color-text-light); font-weight: 500;">English</span>
+                            </div>
+                            @if (text.Value.Length > 80)
+                            {
+                                <textarea class="form-input form-textarea" rows="3"
+                                          style="border-left: 3px solid var(--color-sage-light);"
+                                          placeholder="English translation..."
+                                          value="@(capturedText.ValueEn ?? "")"
+                                          @oninput="@(EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnTextEnInput(capturedText, e)))"></textarea>
+                            }
+                            else
+                            {
+                                <input type="text" class="form-input"
+                                       style="border-left: 3px solid var(--color-sage-light);"
+                                       placeholder="English translation..."
+                                       value="@(capturedText.ValueEn ?? "")"
+                                       @oninput="@(EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnTextEnInput(capturedText, e)))" />
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Schedule Management -->
+            @if (_activeTab == "schedule")
+            {
+                <div class="admin-card">
+                    <h3>Programma-item toevoegen</h3>
+                    <div class="admin-add-form" style="flex-direction: column; align-items: start;">
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap; width: 100%;">
+                            <div class="form-group" style="flex: 0 0 100px;">
+                                <label>Tijd</label>
+                                <input type="text" class="form-input" @bind="_newScheduleTime" placeholder="14:00" />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>🇳🇱 Titel</label>
+                                <input type="text" class="form-input" @bind="_newScheduleTitle" placeholder="Ceremonie" />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>🇬🇧 Title</label>
+                                <input type="text" class="form-input" style="border-left: 3px solid var(--color-sage-light);" @bind="_newScheduleTitleEn" placeholder="Ceremony" />
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap; width: 100%;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>🇳🇱 Beschrijving (optioneel)</label>
+                                <input type="text" class="form-input" @bind="_newScheduleDesc" placeholder="De trouwceremonie" />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>🇬🇧 Description (optional)</label>
+                                <input type="text" class="form-input" style="border-left: 3px solid var(--color-sage-light);" @bind="_newScheduleDescEn" placeholder="The wedding ceremony" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Onder (sub-item van)</label>
+                            <select class="form-input" @bind="_newScheduleParentId">
+                                <option value="0">— Hoofd-item (geen parent) —</option>
+                                @foreach (var item in _scheduleItems.OrderBy(s => s.SortOrder))
+                                {
+                                    <option value="@item.Id">@item.Time — @item.Title</option>
+                                }
+                            </select>
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddScheduleItem">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_scheduleMessage))
+                    {
+                        <div class="admin-success">@_scheduleMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Programma (@_scheduleItems.Count(s => s.ParentId == null) items)</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1rem; font-size: 0.9rem;">
+                        Gebruik de ▲ ▼ knoppen om hoofd-items te verplaatsen.
+                    </p>
+                    @if (_scheduleItems.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen programma-items.</p>
+                    }
+                    else
+                    {
+                        var topLevel = _scheduleItems.Where(s => s.ParentId == null).OrderBy(s => s.SortOrder).ToList();
+                        @foreach (var item in topLevel)
+                        {
+                            var idx = topLevel.IndexOf(item);
+                            <div class="schedule-admin-item" style="border: 2px solid var(--color-cream-dark); border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; background: var(--color-cream);">
+                                @if (_editingScheduleId == item.Id)
+                                {
+                                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end;">
+                                        <div class="form-group" style="flex: 0 0 80px; margin: 0;">
+                                            <label style="font-size: 0.8rem;">Tijd</label>
+                                            <input type="text" class="form-input form-input-sm" @bind="_editScheduleTime" />
+                                        </div>
+                                        <div class="form-group" style="flex: 1; margin: 0;">
+                                            <label style="font-size: 0.8rem;">🇳🇱 Titel</label>
+                                            <input type="text" class="form-input form-input-sm" @bind="_editScheduleTitle" />
+                                        </div>
+                                        <div class="form-group" style="flex: 1; margin: 0;">
+                                            <label style="font-size: 0.8rem;">🇬🇧 Title</label>
+                                            <input type="text" class="form-input form-input-sm" style="border-left: 3px solid var(--color-sage-light);" @bind="_editScheduleTitleEn" placeholder="English..." />
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-top: 0.4rem;">
+                                        <div class="form-group" style="flex: 1; margin: 0;">
+                                            <label style="font-size: 0.8rem;">🇳🇱 Beschrijving</label>
+                                            <input type="text" class="form-input form-input-sm" @bind="_editScheduleDesc" />
+                                        </div>
+                                        <div class="form-group" style="flex: 1; margin: 0;">
+                                            <label style="font-size: 0.8rem;">🇬🇧 Description</label>
+                                            <input type="text" class="form-input form-input-sm" style="border-left: 3px solid var(--color-sage-light);" @bind="_editScheduleDescEn" placeholder="English..." />
+                                        </div>
+                                        <button class="btn-icon btn-save" @onclick="SaveScheduleEdit" title="Opslaan">&#10003;</button>
+                                        <button class="btn-icon btn-cancel" @onclick="CancelScheduleEdit" title="Annuleren">&#10007;</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                                            <button class="btn-icon" style="font-size: 0.7rem; padding: 2px 6px;" @onclick="() => MoveScheduleItem(item, -1)" disabled="@(idx == 0)" title="Omhoog">▲</button>
+                                            <button class="btn-icon" style="font-size: 0.7rem; padding: 2px 6px;" @onclick="() => MoveScheduleItem(item, 1)" disabled="@(idx == topLevel.Count - 1)" title="Omlaag">▼</button>
+                                        </div>
+                                        <strong style="min-width: 55px; color: var(--color-terracotta-dark); font-family: var(--font-sans);">@item.Time</strong>
+                                        <span style="font-family: var(--font-display); font-size: 1.1rem;">@item.Title</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.TitleEn))
+                                        {
+                                            <span style="color: var(--color-sage-dark); font-size: 0.85rem; font-style: italic;">🇬🇧 @item.TitleEn</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(item.Description))
+                                        {
+                                            <span style="color: var(--color-text-light); font-size: 0.9rem;">— @item.Description</span>
+                                        }
+                                        <div style="margin-left: auto; display: flex; gap: 0.3rem;">
+                                            <button class="btn-icon btn-add-sub" @onclick="() => StartAddSubItem(item.Id)" title="Sub-item toevoegen" style="font-size: 1.1rem; color: var(--color-sage-dark); border: 1px solid var(--color-sage-light); border-radius: 6px; padding: 2px 7px;">&#43;</button>
+                                            <button class="btn-icon btn-edit" @onclick="() => StartEditSchedule(item)" title="Bewerken">&#9998;</button>
+                                            <button class="btn-icon btn-delete" @onclick="() => DeleteScheduleItem(item.Id)" title="Verwijderen">&#128465;</button>
+                                        </div>
+                                    </div>
+                                }
+
+                                @* Render children (sub-items) *@
+                                @(AdminChildrenFragment(item))
+
+                                @* Inline add sub-item form *@
+                                @if (_addingSubItemParentId == item.Id)
+                                {
+                                    <div style="margin-top: 0.6rem; padding: 0.8rem 1rem; border: 2px dashed var(--color-sage-light); border-radius: 10px; background: rgba(181, 196, 168, 0.10);">
+                                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end;">
+                                            <div class="form-group" style="flex: 0 0 80px; margin: 0;">
+                                                <label style="font-size: 0.8rem;">Tijd</label>
+                                                <input type="text" class="form-input form-input-sm" @bind="_addSubTime" placeholder="14:30" />
+                                            </div>
+                                            <div class="form-group" style="flex: 1; margin: 0; min-width: 100px;">
+                                                <label style="font-size: 0.8rem;">🇳🇱 Titel</label>
+                                                <input type="text" class="form-input form-input-sm" @bind="_addSubTitle" placeholder="Sub-item titel" />
+                                            </div>
+                                            <div class="form-group" style="flex: 1; margin: 0; min-width: 100px;">
+                                                <label style="font-size: 0.8rem;">🇬🇧 Title</label>
+                                                <input type="text" class="form-input form-input-sm" style="border-left: 3px solid var(--color-sage-light);" @bind="_addSubTitleEn" placeholder="English..." />
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-top: 0.4rem;">
+                                            <div class="form-group" style="flex: 1; margin: 0; min-width: 100px;">
+                                                <label style="font-size: 0.8rem;">🇳🇱 Beschrijving</label>
+                                                <input type="text" class="form-input form-input-sm" @bind="_addSubDesc" placeholder="Optioneel..." />
+                                            </div>
+                                            <div class="form-group" style="flex: 1; margin: 0; min-width: 100px;">
+                                                <label style="font-size: 0.8rem;">🇬🇧 Description</label>
+                                                <input type="text" class="form-input form-input-sm" style="border-left: 3px solid var(--color-sage-light);" @bind="_addSubDescEn" placeholder="English..." />
+                                            </div>
+                                            <button class="btn-icon btn-save" @onclick="SaveNewSubItem" title="Opslaan" style="height: 32px;">&#10003;</button>
+                                            <button class="btn-icon btn-cancel" @onclick="CancelAddSubItem" title="Annuleren" style="height: 32px;">&#10007;</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            <!-- TAB: Contact Info -->
+            @if (_activeTab == "contacts")
+            {
+                <div class="admin-card">
+                    <h3>Contactgegevens toevoegen</h3>
+                    <div class="admin-add-form">
+                        <div class="form-group">
+                            <label>Naam</label>
+                            <input type="text" class="form-input" @bind="_newContactName" placeholder="Naam" />
+                        </div>
+                        <div class="form-group">
+                            <label>Telefoon</label>
+                            <input type="text" class="form-input" @bind="_newContactPhone" placeholder="06..." />
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input type="email" class="form-input" @bind="_newContactEmail" placeholder="email@example.com" />
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddContact">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_contactMessage))
+                    {
+                        <div class="admin-success">@_contactMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Huidige contactpersonen (@_contactInfos.Count)</h3>
+                    @if (_contactInfos.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen contactgegevens.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Naam</th>
+                                        <th>Telefoon</th>
+                                        <th>E-mail</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var contact in _contactInfos)
+                                    {
+                                        <tr>
+                                            @if (_editingContactId == contact.Id)
+                                            {
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editContactName" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editContactPhone" /></td>
+                                                <td><input type="email" class="form-input form-input-sm" @bind="_editContactEmail" /></td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-save" @onclick="SaveContactEdit" title="Opslaan">&#10003;</button>
+                                                    <button class="btn-icon btn-cancel" @onclick="CancelContactEdit" title="Annuleren">&#10007;</button>
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td>@contact.Name</td>
+                                                <td>@contact.Phone</td>
+                                                <td>@contact.Email</td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-edit" @onclick="() => StartEditContact(contact)" title="Bewerken">&#9998;</button>
+                                                    <button class="btn-icon btn-delete" @onclick="() => DeleteContact(contact.Id)" title="Verwijderen">&#128465;</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Locations -->
+            @if (_activeTab == "locations")
+            {
+                <div class="admin-card">
+                    <h3>Locatie toevoegen</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1.5rem;">
+                        Beheer hier de locatiekaarten die op de homepagina onder "Locatie" worden getoond.
+                    </p>
+                    <div class="admin-add-form">
+                        <div class="form-group">
+                            <label>Titel (NL)</label>
+                            <input type="text" class="form-input" @bind="_newLocationTitle" placeholder="Ceremonie" />
+                        </div>
+                        <div class="form-group">
+                            <label>Titel (EN)</label>
+                            <input type="text" class="form-input" @bind="_newLocationTitleEn" placeholder="Ceremony" />
+                        </div>
+                        <div class="form-group">
+                            <label>Icoon</label>
+                            <input type="text" class="form-input" @bind="_newLocationIcon" placeholder="&#9962; of emoji" />
+                        </div>
+                        <div class="form-group">
+                            <label>Naam locatie</label>
+                            <input type="text" class="form-input" @bind="_newLocationVenue" placeholder="Kampkuiper" />
+                        </div>
+                        <div class="form-group">
+                            <label>Adresregel 1</label>
+                            <input type="text" class="form-input" @bind="_newLocationAddress1" placeholder="Almeloseweg 113, 7615 NA" />
+                        </div>
+                        <div class="form-group">
+                            <label>Adresregel 2</label>
+                            <input type="text" class="form-input" @bind="_newLocationAddress2" placeholder="Harbrinkhoek" />
+                        </div>
+                        <div class="form-group">
+                            <label>Telefoon</label>
+                            <input type="text" class="form-input" @bind="_newLocationPhone" placeholder="0546 629 962" />
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddLocation">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_locationMessage))
+                    {
+                        <div class="admin-success">@_locationMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Huidige locaties (@_locations.Count)</h3>
+                    @if (_locations.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen locaties.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Icoon</th>
+                                        <th>Titel (NL)</th>
+                                        <th>Titel (EN)</th>
+                                        <th>Naam</th>
+                                        <th>Adresregel 1</th>
+                                        <th>Adresregel 2</th>
+                                        <th>Telefoon</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var loc in _locations)
+                                    {
+                                        <tr>
+                                            @if (_editingLocationId == loc.Id)
+                                            {
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationIcon" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationTitle" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationTitleEn" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationVenue" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationAddress1" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationAddress2" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editLocationPhone" /></td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-save" @onclick="SaveLocationEdit" title="Opslaan">&#10003;</button>
+                                                    <button class="btn-icon btn-cancel" @onclick="CancelLocationEdit" title="Annuleren">&#10007;</button>
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td>@((MarkupString)loc.Icon)</td>
+                                                <td>@loc.Title</td>
+                                                <td>@loc.TitleEn</td>
+                                                <td>@loc.VenueName</td>
+                                                <td>@loc.AddressLine1</td>
+                                                <td>@loc.AddressLine2</td>
+                                                <td>@loc.Phone</td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-edit" @onclick="() => StartEditLocation(loc)" title="Bewerken">&#9998;</button>
+                                                    <button class="btn-icon btn-delete" @onclick="() => DeleteLocation(loc.Id)" title="Verwijderen">&#128465;</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Dress Code -->
+            @if (_activeTab == "dresscode")
+            {
+                <div class="admin-card">
+                    <h3>Dresscode kleur toevoegen</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1.5rem;">
+                        Beheer hier de kleurtinten die op de website bij de dresscode worden getoond.
+                    </p>
+                    <div class="admin-add-form">
+                        <div class="form-group" style="flex: 0 0 auto;">
+                            <label>Kleur</label>
+                            <input type="color" class="form-input" style="width: 60px; height: 46px; padding: 0.2rem;" @bind="_newDressColorHex" />
+                        </div>
+                        <div class="form-group">
+                            <label>Naam (NL)</label>
+                            <input type="text" class="form-input" @bind="_newDressColorNameNl" placeholder="Bijv. Blush" />
+                        </div>
+                        <div class="form-group">
+                            <label>Naam (EN)</label>
+                            <input type="text" class="form-input" @bind="_newDressColorNameEn" placeholder="E.g. Blush" />
+                        </div>
+                        <button class="btn-rsvp btn-compact" @onclick="AddDressColor">Toevoegen</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_dressColorMessage))
+                    {
+                        <div class="admin-success">@_dressColorMessage</div>
+                    }
+                </div>
+
+                <div class="admin-card">
+                    <h3>Huidige dresscode kleuren (@_dressColors.Count)</h3>
+                    @if (_dressColors.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen kleuren toegevoegd.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kleur</th>
+                                        <th>Naam (NL)</th>
+                                        <th>Naam (EN)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var color in _dressColors.OrderBy(c => c.SortOrder))
+                                    {
+                                        <tr>
+                                            @if (_editingDressColorId == color.Id)
+                                            {
+                                                <td><input type="color" class="form-input form-input-sm" style="width: 50px; height: 38px; padding: 0.1rem;" @bind="_editDressColorHex" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editDressColorNameNl" /></td>
+                                                <td><input type="text" class="form-input form-input-sm" @bind="_editDressColorNameEn" /></td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-save" @onclick="SaveDressColorEdit" title="Opslaan">&#10003;</button>
+                                                    <button class="btn-icon btn-cancel" @onclick="CancelDressColorEdit" title="Annuleren">&#10007;</button>
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td>
+                                                    <span style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                                        <span style="display: inline-block; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--color-cream-dark); background-color: @color.Hex;"></span>
+                                                        <code>@color.Hex</code>
+                                                    </span>
+                                                </td>
+                                                <td>@color.NameNl</td>
+                                                <td>@(string.IsNullOrWhiteSpace(color.NameEn) ? "—" : color.NameEn)</td>
+                                                <td class="admin-actions">
+                                                    <button class="btn-icon btn-edit" @onclick="() => StartEditDressColor(color)" title="Bewerken">&#9998;</button>
+                                                    <button class="btn-icon btn-delete" @onclick="() => DeleteDressColor(color.Id)" title="Verwijderen">&#128465;</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Image Management -->
+            @if (_activeTab == "images")
+            {
+                <div class="admin-card">
+                    <h3>Afbeeldingen beheren</h3>
+                    <p style="color: var(--color-text-light); margin-bottom: 1.5rem;">
+                        Upload afbeeldingen voor de verschillende plekken op de website. Toegestane formaten: JPG, JPEG, PNG. Max 5 MB.
+                    </p>
+
+                    @foreach (var slot in _imageSlots)
+                    {
+                        var capturedSlot = slot;
+                        var existingImage = _siteImages.FirstOrDefault(i => i.Slot == slot.Key);
+                        <div class="image-slot-card" style="border: 2px solid var(--color-cream-dark); border-radius: 12px; padding: 1.2rem; margin-bottom: 1rem; background: var(--color-cream);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem;">
+                                <div>
+                                    <strong style="color: var(--color-terracotta-dark); font-size: 1.05rem;">@slot.Value</strong>
+                                    <small style="display: block; color: var(--color-text-light); font-family: monospace;">@slot.Key</small>
+                                </div>
+                                @if (existingImage is not null)
+                                {
+                                    <span class="badge badge-confirmed">&#10003; @existingImage.FileName</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-pending">Nog geen afbeelding</span>
+                                }
+                            </div>
+                            @if (existingImage is not null)
+                            {
+                                <div style="margin-bottom: 0.8rem; text-align: center;">
+                                    <img src="/api/site-image/@slot.Key?v=@existingImage.Id" alt="@slot.Value" style="max-width: 100%; max-height: 200px; border-radius: 8px; object-fit: cover; border: 1px solid var(--color-cream-dark);" />
+                                </div>
+                            }
+                            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                <InputFile OnChange="(e) => OnImageSelected(capturedSlot.Key, capturedSlot.Value, e)" accept=".jpg,.jpeg,.png" style="font-size: 0.9rem;" />
+                                @if (existingImage is not null)
+                                {
+                                    <button class="btn-icon btn-delete" @onclick="() => DeleteImage(existingImage.Id)" title="Verwijderen">&#128465; Verwijderen</button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_imageMessage))
+                    {
+                        <div class="admin-success">@_imageMessage</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_imageError))
+                    {
+                        <div class="admin-error">@_imageError</div>
+                    }
+                </div>
+            }
+
+            <!-- TAB: Photo Sessions -->
+            @if (_activeTab == "photos")
+            {
+                <div class="admin-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">📸 Foto Sessies (@_photoSessions.Count)</h3>
+                        <label @onclick="() => { _photoOnlyAttending = !_photoOnlyAttending; }" @onclick:preventDefault
+                               style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem; font-family: var(--font-sans); padding: 0.4rem 0.8rem; border-radius: 10px; border: 2px solid @(_photoOnlyAttending ? "var(--color-sage)" : "var(--color-cream-dark)"); background: @(_photoOnlyAttending ? "rgba(138,154,123,0.1)" : "transparent"); transition: all 0.2s; user-select: none;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; border: 2px solid @(_photoOnlyAttending ? "var(--color-sage)" : "var(--color-cream-dark)"); background: @(_photoOnlyAttending ? "var(--color-sage)" : "white"); color: white; font-size: 0.8rem; transition: all 0.2s;">
+                                @if (_photoOnlyAttending) { <text>&#10003;</text> }
+                            </span>
+                            Alleen bevestigde gasten
+                        </label>
+                    </div>
+                    <p style="color: var(--color-text-light); margin-bottom: 1rem; font-size: 0.9rem;">
+                        Sleep om de volgorde te wijzigen. Druk op <strong>+</strong> onderaan om een nieuwe groep toe te voegen.
+                    </p>
+
+                    @if (_photoSessions.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen foto sessies aangemaakt.</p>
+                    }
+                    else
+                    {
+                        var orderedSessions = _photoSessions.OrderBy(s => s.SortOrder).ToList();
+                        @foreach (var session in orderedSessions)
+                        {
+                            var capturedSession = session;
+                            var sessionIndex = orderedSessions.IndexOf(session) + 1;
+                            <div class="photo-session-card"
+                                 draggable="true"
+                                 @ondragstart="() => OnPhotoDragStart(capturedSession)"
+                                 @ondragover:preventDefault
+                                 @ondrop="() => OnPhotoDrop(capturedSession)"
+                                 style="border: 2px solid @(_dragPhotoSessionId == session.Id ? "var(--color-terracotta)" : "var(--color-cream-dark)"); border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; background: var(--color-cream); transition: border-color 0.2s; cursor: grab;">
+                                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; flex-wrap: wrap;">
+                                    <span style="color: var(--color-text-light); font-size: 1.2rem; cursor: grab;">&#9776;</span>
+                                    <strong style="font-family: var(--font-display); font-size: 1.1rem;">Foto @sessionIndex</strong>
+                                    @if (_editingPhotoSessionId == session.Id)
+                                    {
+                                        <input type="text" class="form-input form-input-sm" style="flex: 1; min-width: 120px;"
+                                               @bind="_editPhotoSessionName" placeholder="Beschrijving..."
+                                               @onkeydown="OnEditPhotoSessionKeyDown" />
+                                        <button class="btn-icon btn-save" @onclick="SavePhotoSessionEdit" title="Opslaan">&#10003;</button>
+                                        <button class="btn-icon btn-cancel" @onclick="CancelPhotoSessionEdit" title="Annuleren">&#10007;</button>
+                                    }
+                                    else
+                                    {
+                                        @if (!string.IsNullOrWhiteSpace(session.Name) && session.Name != $"Foto {sessionIndex}")
+                                        {
+                                            <span style="color: var(--color-text-light); font-size: 0.95rem; font-style: italic; cursor: pointer; flex: 1;"
+                                                  @onclick="() => StartEditPhotoSession(capturedSession)" title="Klik om te bewerken">— @session.Name</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--color-cream-dark); font-size: 0.85rem; cursor: pointer; flex: 1;"
+                                                  @onclick="() => StartEditPhotoSession(capturedSession)" title="Beschrijving toevoegen">+ beschrijving</span>
+                                        }
+                                    }
+                                    @{
+                                        var visibleGuests = _photoOnlyAttending
+                                            ? session.Guests.Where(sg => sg.Guest.Attendance is not null &&
+                                                (sg.Guest.Attendance.AttendingCeremony || sg.Guest.Attendance.AttendingDinner || sg.Guest.Attendance.AttendingEvening)).ToList()
+                                            : session.Guests.ToList();
+                                    }
+                                    <span style="color: var(--color-text-light); font-size: 0.85rem;">@visibleGuests.Count personen</span>
+                                    <button class="btn-icon btn-delete" @onclick="() => DeletePhotoSession(capturedSession.Id)" title="Verwijderen">&#128465;</button>
+                                </div>
+
+                                <!-- Guest chips -->
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem;">
+                                    @foreach (var sg in visibleGuests)
+                                    {
+                                        var capturedSg = sg;
+                                        var hasRsvp = sg.Guest.Attendance is not null &&
+                                            (sg.Guest.Attendance.AttendingCeremony || sg.Guest.Attendance.AttendingDinner || sg.Guest.Attendance.AttendingEvening);
+                                        <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: @(hasRsvp ? "var(--color-sage-dark)" : "var(--color-text-light)"); color: white; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 1.1rem;">
+                                            @sg.Guest.FullName
+                                            <button style="background: none; border: none; cursor: pointer; color: var(--color-cream); font-size: 1rem; padding: 0; line-height: 1; opacity: 0.8;"
+                                                    @onclick="() => RemoveGuestFromSession(capturedSession.Id, capturedSg.GuestId)" title="Verwijderen">&#10005;</button>
+                                        </span>
+                                    }
+                                    @if (visibleGuests.Count == 0)
+                                    {
+                                        <span style="color: var(--color-text-light); font-style: italic; font-size: 0.85rem;">
+                                            @(_photoOnlyAttending ? "Geen bevestigde gasten in deze groep" : "Nog geen gasten toegevoegd")
+                                        </span>
+                                    }
+                                </div>
+
+                                <!-- Add guest search for this session -->
+                                <div style="position: relative;">
+                                    <input type="text" class="form-input form-input-sm" placeholder="&#128269; Gast toevoegen..."
+                                           value="@(_photoSearchSessionId == session.Id ? _photoGuestSearch : "")"
+                                           @onfocus="() => { _photoSearchSessionId = capturedSession.Id; _photoGuestSearch = string.Empty; }"
+                                           @oninput="OnPhotoGuestSearchInput"
+                                           @onkeydown="(e) => OnPhotoGuestSearchKeyDown(e, capturedSession)" />
+                                    @if (_photoSearchSessionId == session.Id && !string.IsNullOrWhiteSpace(_photoGuestSearch))
+                                    {
+                                        var existingGuestIds = session.Guests.Select(g => g.GuestId).ToHashSet();
+                                        var availableGuests = GetFilteredPhotoGuests()
+                                            .Where(g => !existingGuestIds.Contains(g.Id))
+                                            .Where(g => g.FullName.Contains(_photoGuestSearch, StringComparison.OrdinalIgnoreCase))
+                                            .Take(10).ToList();
+                                        @if (availableGuests.Count > 0)
+                                        {
+                                            <div style="position: absolute; z-index: 10; background: white; border: 1px solid var(--color-cream-dark); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; width: 100%; margin-top: 2px;">
+                                                @foreach (var guest in availableGuests)
+                                                {
+                                                    var capturedGuest = guest;
+                                                    <div style="padding: 0.5rem 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--color-cream-dark);"
+                                                         @onclick="() => AddGuestToSession(capturedSession.Id, capturedGuest.Id)"
+                                                         @onmousedown:preventDefault>
+                                                        <span>@guest.FullName</span>
+                                                        <span class="badge badge-@guest.InvitedFor.ToString().ToLower()" style="font-size: 0.75rem;">@FormatInvitedFor(guest.InvitedFor)</span>
+                                                        @if (guest.Attendance?.AttendingCeremony == true)
+                                                        {
+                                                            <span style="font-size: 0.75rem;">✅</span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div style="position: absolute; z-index: 10; background: white; border: 1px solid var(--color-cream-dark); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; margin-top: 2px; padding: 0.6rem 0.8rem; color: var(--color-text-light); font-size: 0.9rem;">
+                                                Geen gasten gevonden
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    <!-- Add new session button -->
+                    <button @onclick="AddPhotoSession"
+                            style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; padding: 0.8rem; margin-top: 0.5rem; border: 2px dashed var(--color-sage-light); border-radius: 12px; background: transparent; cursor: pointer; color: var(--color-sage-dark); font-family: var(--font-sans); font-size: 1rem; transition: all 0.2s;"
+                            onmouseover="this.style.borderColor='var(--color-terracotta)';this.style.color='var(--color-terracotta)'"
+                            onmouseout="this.style.borderColor='var(--color-sage-light)';this.style.color='var(--color-sage-dark)'">
+                        <span style="font-size: 1.4rem; font-weight: 600;">+</span> Voeg fotosessie toe
+                    </button>
+                </div>
+            }
+
+            <!-- TAB: Visitor Log -->
+            @if (_activeTab == "visitors")
+            {
+                <div class="admin-card">
+                    <h3>👁 Bezoekers</h3>
+                    <p style="margin-bottom: 1rem; color: var(--color-warm-brown);">Overzicht van hoe vaak de website is bezocht door gasten met een geldige toegangscode.</p>
+
+                    @if (_visitorLogDays.Count == 0)
+                    {
+                        <p class="admin-empty">Nog geen bezoeken geregistreerd.</p>
+                    }
+                    else
+                    {
+                        <div class="admin-stats" style="margin-bottom: 1.5rem;">
+                            <div class="stat-card">
+                                <div class="stat-number">@_visitorLogDays.Sum(d => d.Count)</div>
+                                <div class="stat-label">Totaal bezoeken</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">@_visitorLogDays.Count</div>
+                                <div class="stat-label">Actieve dagen</div>
+                            </div>
+                            @if (_visitorLogDays.Count > 0)
+                            {
+                                <div class="stat-card">
+                                    <div class="stat-number">@_visitorLogDays.First().Date.ToString("dd MMM")</div>
+                                    <div class="stat-label">Laatst bezocht</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-number">@(_visitorLogDays.Count > 0 ? Math.Round((double)_visitorLogDays.Sum(d => d.Count) / _visitorLogDays.Count, 1).ToString("0.#") : "0")</div>
+                                    <div class="stat-label">Gem. per dag</div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Datum</th>
+                                        <th style="text-align: right;">Aantal bezoeken</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var day in _visitorLogDays)
+                                    {
+                                        <tr>
+                                            <td>@day.Date.ToString("dddd d MMMM yyyy", new System.Globalization.CultureInfo("nl-NL"))</td>
+                                            <td style="text-align: right;">@day.Count</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr style="font-weight: bold; border-top: 2px solid var(--color-warm-brown);">
+                                        <td>Totaal</td>
+                                        <td style="text-align: right;">@_visitorLogDays.Sum(d => d.Count)</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // ========================
+    //   STATE
+    // ========================
+    private const string SessionKey = "admin_session";
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private List<AdminUser> _adminUsers = [];
+    private AdminUser? _currentUser;
+    private string _selectedUserName = "";
+    private string _password = "";
+    private string _loginError = "";
+    private string _activeTab = "guests";
+
+    // Guest management
+    private List<Guest> _guests = [];
+    private string _newGuestName = "";
+    private InvitedForType _newGuestInvitedFor = InvitedForType.DayGuest;
+    private string _guestMessage = "";
+    private ElementReference _guestNameInput;
+
+    // Editing
+    private int? _editingGuestId;
+    private string _editGuestName = "";
+    private InvitedForType _editGuestInvitedFor;
+
+    // RSVP Management
+    private int _rsvpSelectedGuestId;
+    private bool _rsvpCeremony;
+    private bool _rsvpDinner;
+    private bool _rsvpEvening;
+    private string _rsvpDietary = "";
+    private string _rsvpMessage = "";
+    private string _rsvpSaveMessage = "";
+    private string _rsvpSaveError = "";
+    private string _rsvpGuestSearch = "";
+    private bool _showRsvpSuggestions;
+
+    // Attendance search
+    private string _attendanceSearch = "";
+
+    // Webhook
+    private const string WebhookUrl = "https://n8n.amuseic.nl/webhook/ef5c1628-4deb-4f8d-b92f-200ca59d61b0";
+
+    // FAQ Management
+    private List<Data.Models.FaqItem> _faqItems = [];
+    private string _newFaqQuestion = "";
+    private string _newFaqQuestionEn = "";
+    private string _newFaqAnswer = "";
+    private string _newFaqAnswerEn = "";
+    private int _newFaqOrder;
+    private string _faqMessage = "";
+    private int? _editingFaqId;
+    private string _editFaqQuestion = "";
+    private string _editFaqQuestionEn = "";
+    private string _editFaqAnswer = "";
+    private string _editFaqAnswerEn = "";
+    private int _editFaqOrder;
+
+    // Site Texts
+    private List<SiteText> _siteTexts = [];
+    private string _textsMessage = "";
+    private System.Timers.Timer? _debounceTimer;
+    private bool _textsSaving;
+
+    // Schedule Management
+    private List<Data.Models.ScheduleItem> _scheduleItems = [];
+    private string _newScheduleTime = "";
+    private string _newScheduleTitle = "";
+    private string _newScheduleTitleEn = "";
+    private string _newScheduleDesc = "";
+    private string _newScheduleDescEn = "";
+    private int _newScheduleParentId;
+    private string _scheduleMessage = "";
+    private int? _editingScheduleId;
+    private string _editScheduleTime = "";
+    private string _editScheduleTitle = "";
+    private string _editScheduleTitleEn = "";
+    private string _editScheduleDesc = "";
+    private string _editScheduleDescEn = "";
+
+    // Inline sub-item creation
+    private int? _addingSubItemParentId;
+    private string _addSubTime = "";
+    private string _addSubTitle = "";
+    private string _addSubTitleEn = "";
+    private string _addSubDesc = "";
+    private string _addSubDescEn = "";
+
+    // Contact Info Management
+    private List<ContactInfo> _contactInfos = [];
+    private string _newContactName = "";
+    private string _newContactPhone = "";
+    private string _newContactEmail = "";
+    private string _contactMessage = "";
+    private int? _editingContactId;
+    private string _editContactName = "";
+    private string _editContactPhone = "";
+    private string _editContactEmail = "";
+
+    // Location Management
+    private List<WeddingLocation> _locations = [];
+    private string _newLocationTitle = "";
+    private string _newLocationTitleEn = "";
+    private string _newLocationIcon = "";
+    private string _newLocationVenue = "";
+    private string _newLocationAddress1 = "";
+    private string _newLocationAddress2 = "";
+    private string _newLocationPhone = "";
+    private string _locationMessage = "";
+    private int? _editingLocationId;
+    private string _editLocationTitle = "";
+    private string _editLocationTitleEn = "";
+    private string _editLocationIcon = "";
+    private string _editLocationVenue = "";
+    private string _editLocationAddress1 = "";
+    private string _editLocationAddress2 = "";
+    private string _editLocationPhone = "";
+
+    // Dress Code Management
+    private List<DressCodeColor> _dressColors = [];
+    private string _newDressColorHex = "#EFD3D0";
+    private string _newDressColorNameNl = "";
+    private string _newDressColorNameEn = "";
+    private string _dressColorMessage = "";
+    private int? _editingDressColorId;
+    private string _editDressColorHex = "";
+    private string _editDressColorNameNl = "";
+    private string _editDressColorNameEn = "";
+
+    // Convenience accessor for the configurable wedding date site-text
+    private SiteText? WeddingDateText => _siteTexts.FirstOrDefault(t => t.Key == "wedding.date");
+
+    // Image Management
+    private List<SiteImage> _siteImages = [];
+    private string _imageMessage = "";
+    private string _imageError = "";
+    private static readonly Dictionary<string, string> _imageSlots = new()
+    {
+        { "hero-bg", "Hero achtergrond (grote foto bovenaan)" },
+        { "access-bg", "Toegangspagina achtergrond (inlogscherm)" },
+        { "photo-strip-1", "Fotostrip — Foto 1 (links)" },
+        { "photo-strip-2", "Fotostrip — Foto 2 (midden)" },
+        { "photo-strip-3", "Fotostrip — Foto 3 (rechts)" },
+        { "full-photo", "Grote foto sectie (quote achtergrond)" }
+    };
+
+    // Visitor Log
+    private List<(DateOnly Date, int Count)> _visitorLogDays = [];
+
+    // Photo Session Management
+    private List<PhotoSession> _photoSessions = [];
+    private string _newPhotoSessionName = "";
+    private string _photoSessionMessage = "";
+    private bool _photoOnlyAttending;
+    private int? _dragPhotoSessionId;
+    private int? _editingPhotoSessionId;
+    private string _editPhotoSessionName = "";
+    private int? _photoSearchSessionId;
+    private string _photoGuestSearch = "";
+
+    private bool _selectedUserNeedsSetup
+    {
+        get
+        {
+            var user = _adminUsers.FirstOrDefault(u => u.Name == _selectedUserName);
+            return user is not null && string.IsNullOrEmpty(user.PasswordHash);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _adminUsers = await db.AdminUsers.ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var result = await LocalStorage.GetAsync<AdminSession>(SessionKey);
+            if (result is { Success: true, Value: not null })
+            {
+                var session = result.Value;
+                if (session.ExpiresUtc > DateTime.UtcNow)
+                {
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var user = await db.AdminUsers.FindAsync(session.UserId);
+                    if (user is not null)
+                    {
+                        _currentUser = user;
+                        await LoadGuests();
+                        await LoadFaqItems();
+                    }
+                }
+                else
+                {
+                    await LocalStorage.DeleteAsync(SessionKey);
+                }
+            }
+        }
+        catch
+        {
+            // Storage not available or corrupted — ignore
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    // ========================
+    //   LOGIN
+    // ========================
+    private async Task HandleLogin()
+    {
+        _loginError = "";
+
+        if (string.IsNullOrWhiteSpace(_selectedUserName))
+        {
+            _loginError = "Selecteer eerst je naam.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_password) || _password.Length < 4)
+        {
+            _loginError = "Wachtwoord moet minimaal 4 tekens zijn.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var user = await db.AdminUsers.FirstOrDefaultAsync(u => u.Name == _selectedUserName);
+            if (user is null) return;
+
+            if (string.IsNullOrEmpty(user.PasswordHash))
+            {
+                // First time — set password
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(_password);
+                await db.SaveChangesAsync();
+                _currentUser = user;
+                await SaveSession(user.Id);
+                await LoadGuests();
+                await LoadFaqItems();
+            }
+            else
+            {
+                // Verify password
+                if (BCrypt.Net.BCrypt.Verify(_password, user.PasswordHash))
+                {
+                    _currentUser = user;
+                    await SaveSession(user.Id);
+                    await LoadGuests();
+                    await LoadFaqItems();
+                }
+                else
+                {
+                    _loginError = "Wachtwoord onjuist.";
+                }
+            }
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task Logout()
+    {
+        _currentUser = null;
+        _password = "";
+        _selectedUserName = "";
+        _activeTab = "guests";
+        _debounceTimer?.Dispose();
+        _debounceTimer = null;
+        await LocalStorage.DeleteAsync(SessionKey);
+    }
+
+    private async Task OnLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleLogin();
+        }
+    }
+
+    // ========================
+    //   GUEST MANAGEMENT
+    // ========================
+    private async Task LoadGuests()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _guests = await db.Guests
+            .Include(g => g.Attendance)
+            .ThenInclude(a => a!.Play)
+            .OrderBy(g => g.FullName)
+            .ToListAsync();
+    }
+
+    private async Task AddGuest()
+    {
+        _guestMessage = "";
+        if (string.IsNullOrWhiteSpace(_newGuestName))
+        {
+            _guestMessage = "Vul een naam in.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            var addedName = _newGuestName.Trim();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.Guests.Add(new Guest
+            {
+                FullName = addedName,
+                InvitedFor = _newGuestInvitedFor
+            });
+            await db.SaveChangesAsync();
+            _newGuestName = "";
+            _guestMessage = $"Gast toegevoegd: {addedName}!";
+            await LoadGuests();
+        }
+        finally
+        {
+            _isBusy = false;
+            StateHasChanged();
+            await FocusGuestNameInput();
+        }
+    }
+
+    private async Task FocusGuestNameInput()
+    {
+        await Task.Yield();
+        try { await JS.InvokeVoidAsync("eval", "document.querySelector('[data-guest-name-input]')?.focus()"); } catch { }
+    }
+
+    private async Task OnGuestNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddGuest();
+        }
+    }
+
+    private void StartEditGuest(Guest guest)
+    {
+        _editingGuestId = guest.Id;
+        _editGuestName = guest.FullName;
+        _editGuestInvitedFor = guest.InvitedFor;
+    }
+
+    private void CancelGuestEdit()
+    {
+        _editingGuestId = null;
+    }
+
+    private async Task SaveGuestEdit()
+    {
+        if (_editingGuestId is null || string.IsNullOrWhiteSpace(_editGuestName)) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var guest = await db.Guests.FindAsync(_editingGuestId.Value);
+            if (guest is not null)
+            {
+                guest.FullName = _editGuestName.Trim();
+                guest.InvitedFor = _editGuestInvitedFor;
+                await db.SaveChangesAsync();
+            }
+            _editingGuestId = null;
+            await LoadGuests();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteGuest(int id)
+    {
+        var guestName = _guests.FirstOrDefault(g => g.Id == id)?.FullName ?? "deze gast";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Weet je zeker dat je '{guestName}' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.");
+        
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var guest = await db.Guests.FindAsync(id);
+            if (guest is not null)
+            {
+                db.Guests.Remove(guest);
+                await db.SaveChangesAsync();
+            }
+            await LoadGuests();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   HELPERS
+    // ========================
+    private async Task SaveSession(int userId)
+    {
+        var session = new AdminSession(userId, DateTime.UtcNow.AddDays(7));
+        await LocalStorage.SetAsync(SessionKey, session);
+    }
+
+    private static string FormatInvitedFor(InvitedForType type) => type switch
+    {
+        InvitedForType.DayGuest => "Daggast",
+        InvitedForType.Ceremony => "Ceremonie",
+        InvitedForType.CeremonyAndEvening => "Ceremonie & Avond",
+        InvitedForType.Evening => "Avondfeest",
+        _ => type.ToString()
+    };
+
+    // ========================
+    //   RSVP MANAGEMENT
+    // ========================
+    private void OnRsvpSearchChanged()
+    {
+        _showRsvpSuggestions = true;
+        if (string.IsNullOrWhiteSpace(_rsvpGuestSearch))
+        {
+            _rsvpSelectedGuestId = 0;
+        }
+    }
+
+    private void SelectRsvpGuest(Guest guest)
+    {
+        _rsvpSelectedGuestId = guest.Id;
+        _rsvpGuestSearch = guest.FullName;
+        _showRsvpSuggestions = false;
+        OnRsvpGuestSelected();
+    }
+
+    private void OnRsvpGuestSelected()
+    {
+        _rsvpSaveMessage = "";
+        _rsvpSaveError = "";
+        var guest = _guests.FirstOrDefault(g => g.Id == _rsvpSelectedGuestId);
+        if (guest?.Attendance is not null)
+        {
+            _rsvpCeremony = guest.Attendance.AttendingCeremony;
+            _rsvpDinner = guest.Attendance.AttendingDinner;
+            _rsvpEvening = guest.Attendance.AttendingEvening;
+            _rsvpDietary = guest.Attendance.DietaryNotes ?? "";
+            _rsvpMessage = guest.Attendance.Message ?? "";
+        }
+        else
+        {
+            // Pre-fill defaults based on invitation type
+            if (guest is not null)
+            {
+                _rsvpCeremony = guest.InvitedFor is InvitedForType.Ceremony or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest;
+                _rsvpDinner = guest.InvitedFor is InvitedForType.DayGuest;
+                _rsvpEvening = guest.InvitedFor is InvitedForType.Evening or InvitedForType.CeremonyAndEvening or InvitedForType.DayGuest;
+            }
+            else
+            {
+                _rsvpCeremony = false;
+                _rsvpDinner = false;
+                _rsvpEvening = false;
+            }
+            _rsvpDietary = "";
+            _rsvpMessage = "";
+        }
+    }
+
+    private async Task SaveAdminRsvp()
+    {
+        _rsvpSaveMessage = "";
+        _rsvpSaveError = "";
+
+        if (_rsvpSelectedGuestId <= 0)
+        {
+            _rsvpSaveError = "Selecteer eerst een gast.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var guest = await db.Guests
+                .Include(g => g.Attendance)
+                .FirstOrDefaultAsync(g => g.Id == _rsvpSelectedGuestId);
+
+            if (guest is null)
+            {
+                _rsvpSaveError = "Gast niet gevonden.";
+                return;
+            }
+
+            if (guest.Attendance is null)
+            {
+                db.Attendances.Add(new Attendance
+                {
+                    GuestId = guest.Id,
+                    AttendingCeremony = _rsvpCeremony,
+                    AttendingDinner = _rsvpDinner,
+                    AttendingEvening = _rsvpEvening,
+                    DietaryNotes = string.IsNullOrWhiteSpace(_rsvpDietary) ? null : _rsvpDietary.Trim(),
+                    Message = string.IsNullOrWhiteSpace(_rsvpMessage) ? null : _rsvpMessage.Trim(),
+                    SubmittedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                guest.Attendance.AttendingCeremony = _rsvpCeremony;
+                guest.Attendance.AttendingDinner = _rsvpDinner;
+                guest.Attendance.AttendingEvening = _rsvpEvening;
+                guest.Attendance.DietaryNotes = string.IsNullOrWhiteSpace(_rsvpDietary) ? null : _rsvpDietary.Trim();
+                guest.Attendance.Message = string.IsNullOrWhiteSpace(_rsvpMessage) ? null : _rsvpMessage.Trim();
+                guest.Attendance.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            _rsvpSaveMessage = $"RSVP voor {guest.FullName} opgeslagen!";
+            await LoadGuests();
+
+            // Fire webhook (fire-and-forget, don't block UI)
+            _ = SendRsvpWebhook(guest.FullName, _rsvpCeremony, _rsvpDinner, _rsvpEvening);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteAdminRsvp()
+    {
+        if (_rsvpSelectedGuestId <= 0) return;
+
+        var guestName = _guests.FirstOrDefault(g => g.Id == _rsvpSelectedGuestId)?.FullName ?? "deze gast";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Weet je zeker dat je de RSVP van '{guestName}' wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var attendance = await db.Attendances
+                .Include(a => a.Play)
+                .FirstOrDefaultAsync(a => a.GuestId == _rsvpSelectedGuestId);
+
+            if (attendance is not null)
+            {
+                db.Attendances.Remove(attendance);
+                await db.SaveChangesAsync();
+            }
+
+            _rsvpSaveMessage = $"RSVP van {guestName} verwijderd.";
+            _rsvpCeremony = false;
+            _rsvpDinner = false;
+            _rsvpEvening = false;
+            _rsvpDietary = "";
+            _rsvpMessage = "";
+            await LoadGuests();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   WEBHOOK
+    // ========================
+    private async Task SendRsvpWebhook(string name, bool ceremony, bool dinner, bool evening)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var payload = new
+            {
+                Name = name,
+                Attendance = new
+                {
+                    Ceremony = ceremony,
+                    Dinner = dinner,
+                    Evening = evening
+                }
+            };
+            await client.PostAsJsonAsync(WebhookUrl, payload);
+        }
+        catch
+        {
+            // Webhook failure should not affect the user experience
+        }
+    }
+
+    // ========================
+    //   FAQ MANAGEMENT
+    // ========================
+    private async Task LoadFaqItems()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _faqItems = await db.FaqItems.OrderBy(f => f.SortOrder).ToListAsync();
+    }
+
+    private async Task AddFaq()
+    {
+        _faqMessage = "";
+        if (string.IsNullOrWhiteSpace(_newFaqQuestion) || string.IsNullOrWhiteSpace(_newFaqAnswer))
+        {
+            _faqMessage = "Vul zowel vraag als antwoord in.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.FaqItems.Add(new Data.Models.FaqItem
+            {
+                Question = _newFaqQuestion.Trim(),
+                QuestionEn = string.IsNullOrWhiteSpace(_newFaqQuestionEn) ? null : _newFaqQuestionEn.Trim(),
+                Answer = _newFaqAnswer.Trim(),
+                AnswerEn = string.IsNullOrWhiteSpace(_newFaqAnswerEn) ? null : _newFaqAnswerEn.Trim(),
+                SortOrder = _newFaqOrder
+            });
+            await db.SaveChangesAsync();
+            _newFaqQuestion = "";
+            _newFaqQuestionEn = "";
+            _newFaqAnswer = "";
+            _newFaqAnswerEn = "";
+            _newFaqOrder = 0;
+            _faqMessage = "FAQ toegevoegd!";
+            await LoadFaqItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditFaq(Data.Models.FaqItem faq)
+    {
+        _editingFaqId = faq.Id;
+        _editFaqQuestion = faq.Question;
+        _editFaqQuestionEn = faq.QuestionEn ?? "";
+        _editFaqAnswer = faq.Answer;
+        _editFaqAnswerEn = faq.AnswerEn ?? "";
+        _editFaqOrder = faq.SortOrder;
+    }
+
+    private void CancelFaqEdit()
+    {
+        _editingFaqId = null;
+    }
+
+    private async Task SaveFaqEdit()
+    {
+        if (_editingFaqId is null) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var faq = await db.FaqItems.FindAsync(_editingFaqId.Value);
+            if (faq is not null)
+            {
+                faq.Question = _editFaqQuestion.Trim();
+                faq.QuestionEn = string.IsNullOrWhiteSpace(_editFaqQuestionEn) ? null : _editFaqQuestionEn.Trim();
+                faq.Answer = _editFaqAnswer.Trim();
+                faq.AnswerEn = string.IsNullOrWhiteSpace(_editFaqAnswerEn) ? null : _editFaqAnswerEn.Trim();
+                faq.SortOrder = _editFaqOrder;
+                await db.SaveChangesAsync();
+            }
+            _editingFaqId = null;
+            await LoadFaqItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteFaq(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze FAQ wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var faq = await db.FaqItems.FindAsync(id);
+            if (faq is not null)
+            {
+                db.FaqItems.Remove(faq);
+                await db.SaveChangesAsync();
+            }
+            await LoadFaqItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   SITE TEXTS (auto-save with debounce)
+    // ========================
+    private async Task SwitchToTexts()
+    {
+        _activeTab = "texts";
+        await LoadSiteTexts();
+    }
+
+    private async Task LoadSiteTexts()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _siteTexts = await db.SiteTexts.OrderBy(t => t.Id).ToListAsync();
+    }
+
+    private void OnTextInput(SiteText text, ChangeEventArgs e)
+    {
+        OnTextChanged(text, e.Value?.ToString() ?? "", isEnglish: false);
+    }
+
+    private void OnTextEnInput(SiteText text, ChangeEventArgs e)
+    {
+        OnTextChanged(text, e.Value?.ToString() ?? "", isEnglish: true);
+    }
+
+    private void OnTextChanged(SiteText text, string newValue, bool isEnglish = false)
+    {
+        if (isEnglish)
+            text.ValueEn = string.IsNullOrWhiteSpace(newValue) ? null : newValue;
+        else
+            text.Value = newValue;
+        _textsMessage = "";
+
+        // Reset debounce timer
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+        _debounceTimer = new System.Timers.Timer(500);
+        _debounceTimer.AutoReset = false;
+        _debounceTimer.Elapsed += async (_, _) =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await SaveAllTexts();
+                StateHasChanged();
+            });
+        };
+        _debounceTimer.Start();
+    }
+
+    private async Task SaveAllTexts()
+    {
+        if (_textsSaving) return;
+        _textsSaving = true;
+        _textsMessage = "";
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            foreach (var text in _siteTexts)
+            {
+                var dbText = await db.SiteTexts.FindAsync(text.Id);
+                if (dbText is not null)
+                {
+                    dbText.Value = text.Value;
+                    dbText.ValueEn = text.ValueEn;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            _textsMessage = "✅ Opgeslagen";
+        }
+        finally
+        {
+            _textsSaving = false;
+        }
+    }
+
+    // ========================
+    //   SCHEDULE MANAGEMENT
+    // ========================
+    private async Task SwitchToSchedule()
+    {
+        _activeTab = "schedule";
+        await LoadScheduleItems();
+    }
+
+    private async Task LoadScheduleItems()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _scheduleItems = await db.ScheduleItems
+            .Include(s => s.Children)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+    }
+
+    private async Task AddScheduleItem()
+    {
+        _scheduleMessage = "";
+        if (string.IsNullOrWhiteSpace(_newScheduleTime) || string.IsNullOrWhiteSpace(_newScheduleTitle))
+        {
+            _scheduleMessage = "Vul ten minste een tijd en titel in.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Determine sort order
+            int nextOrder;
+            if (_newScheduleParentId > 0)
+            {
+                nextOrder = await db.ScheduleItems.Where(s => s.ParentId == _newScheduleParentId).CountAsync() + 1;
+            }
+            else
+            {
+                nextOrder = await db.ScheduleItems.Where(s => s.ParentId == null).CountAsync() + 1;
+            }
+
+            db.ScheduleItems.Add(new Data.Models.ScheduleItem
+            {
+                Time = _newScheduleTime.Trim(),
+                Title = _newScheduleTitle.Trim(),
+                TitleEn = string.IsNullOrWhiteSpace(_newScheduleTitleEn) ? null : _newScheduleTitleEn.Trim(),
+                Description = string.IsNullOrWhiteSpace(_newScheduleDesc) ? null : _newScheduleDesc.Trim(),
+                DescriptionEn = string.IsNullOrWhiteSpace(_newScheduleDescEn) ? null : _newScheduleDescEn.Trim(),
+                SortOrder = nextOrder,
+                ParentId = _newScheduleParentId > 0 ? _newScheduleParentId : null
+            });
+            await db.SaveChangesAsync();
+            _newScheduleTime = "";
+            _newScheduleTitle = "";
+            _newScheduleTitleEn = "";
+            _newScheduleDesc = "";
+            _newScheduleDescEn = "";
+            _newScheduleParentId = 0;
+            _scheduleMessage = "Programma-item toegevoegd!";
+            await LoadScheduleItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditSchedule(Data.Models.ScheduleItem item)
+    {
+        _editingScheduleId = item.Id;
+        _editScheduleTime = item.Time;
+        _editScheduleTitle = item.Title;
+        _editScheduleTitleEn = item.TitleEn ?? "";
+        _editScheduleDesc = item.Description ?? "";
+        _editScheduleDescEn = item.DescriptionEn ?? "";
+    }
+
+    private void StartAddSubItem(int parentId)
+    {
+        _addingSubItemParentId = parentId;
+        _addSubTime = "";
+        _addSubTitle = "";
+        _addSubTitleEn = "";
+        _addSubDesc = "";
+        _addSubDescEn = "";
+    }
+
+    private void CancelAddSubItem()
+    {
+        _addingSubItemParentId = null;
+        _addSubTime = "";
+        _addSubTitle = "";
+        _addSubTitleEn = "";
+        _addSubDesc = "";
+        _addSubDescEn = "";
+    }
+
+    private async Task SaveNewSubItem()
+    {
+        if (_addingSubItemParentId is null || string.IsNullOrWhiteSpace(_addSubTitle))
+        {
+            _scheduleMessage = "Vul ten minste een titel in.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var nextOrder = await db.ScheduleItems.Where(s => s.ParentId == _addingSubItemParentId).CountAsync() + 1;
+
+        db.ScheduleItems.Add(new Data.Models.ScheduleItem
+        {
+            Time = string.IsNullOrWhiteSpace(_addSubTime) ? "" : _addSubTime.Trim(),
+            Title = _addSubTitle.Trim(),
+            TitleEn = string.IsNullOrWhiteSpace(_addSubTitleEn) ? null : _addSubTitleEn.Trim(),
+            Description = string.IsNullOrWhiteSpace(_addSubDesc) ? null : _addSubDesc.Trim(),
+            DescriptionEn = string.IsNullOrWhiteSpace(_addSubDescEn) ? null : _addSubDescEn.Trim(),
+            SortOrder = nextOrder,
+            ParentId = _addingSubItemParentId
+        });
+        await db.SaveChangesAsync();
+
+        _addingSubItemParentId = null;
+        _addSubTime = "";
+        _addSubTitle = "";
+        _addSubTitleEn = "";
+        _addSubDesc = "";
+        _addSubDescEn = "";
+        _scheduleMessage = "Sub-item toegevoegd!";
+        await LoadScheduleItems();
+    }
+
+    private void CancelScheduleEdit()
+    {
+        _editingScheduleId = null;
+    }
+
+    private async Task SaveScheduleEdit()
+    {
+        if (_editingScheduleId is null) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var item = await db.ScheduleItems.FindAsync(_editingScheduleId.Value);
+            if (item is not null)
+            {
+                item.Time = _editScheduleTime.Trim();
+                item.Title = _editScheduleTitle.Trim();
+                item.TitleEn = string.IsNullOrWhiteSpace(_editScheduleTitleEn) ? null : _editScheduleTitleEn.Trim();
+                item.Description = string.IsNullOrWhiteSpace(_editScheduleDesc) ? null : _editScheduleDesc.Trim();
+                item.DescriptionEn = string.IsNullOrWhiteSpace(_editScheduleDescEn) ? null : _editScheduleDescEn.Trim();
+                await db.SaveChangesAsync();
+            }
+            _editingScheduleId = null;
+            await LoadScheduleItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteScheduleItem(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je dit item (en eventuele sub-items) wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var item = await db.ScheduleItems.FindAsync(id);
+            if (item is not null)
+            {
+                db.ScheduleItems.Remove(item);
+                await db.SaveChangesAsync();
+            }
+            await LoadScheduleItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task MoveScheduleItem(Data.Models.ScheduleItem item, int direction)
+    {
+        var siblings = _scheduleItems
+            .Where(s => s.ParentId == item.ParentId)
+            .OrderBy(s => s.SortOrder)
+            .ToList();
+
+        var idx = siblings.FindIndex(s => s.Id == item.Id);
+        var targetIdx = idx + direction;
+        if (targetIdx < 0 || targetIdx >= siblings.Count) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            // First, normalize all sibling sort orders to ensure they are unique and sequential
+            var dbSiblings = await db.ScheduleItems
+                .Where(s => s.ParentId == item.ParentId)
+                .OrderBy(s => s.SortOrder)
+                .ThenBy(s => s.Id)
+                .ToListAsync();
+            
+            for (int i = 0; i < dbSiblings.Count; i++)
+            {
+                dbSiblings[i].SortOrder = i + 1;
+            }
+            await db.SaveChangesAsync();
+            
+            // Now find the two items and swap them
+            var orderedSiblings = dbSiblings.OrderBy(s => s.SortOrder).ToList();
+            var currentIdx = orderedSiblings.FindIndex(s => s.Id == item.Id);
+            var swapIdx = currentIdx + direction;
+            if (swapIdx >= 0 && swapIdx < orderedSiblings.Count)
+            {
+                var a = orderedSiblings[currentIdx];
+                var b = orderedSiblings[swapIdx];
+                (a.SortOrder, b.SortOrder) = (b.SortOrder, a.SortOrder);
+                await db.SaveChangesAsync();
+            }
+            
+            await LoadScheduleItems();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private RenderFragment AdminChildrenFragment(Data.Models.ScheduleItem parent) => builder =>
+    {
+        var children = _scheduleItems
+            .Where(s => s.ParentId == parent.Id)
+            .OrderBy(s => s.SortOrder)
+            .ToList();
+        if (children.Count == 0) return;
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "style", "margin-top: 0.6rem; padding-left: 1.2rem; border-left: 2px solid var(--color-sage-light);");
+
+        foreach (var child in children)
+        {
+            var capturedChild = child;
+            var childIdx = children.IndexOf(child);
+
+            builder.OpenElement(2, "div");
+            builder.AddAttribute(3, "style", "padding: 0.4rem 0; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.95rem;");
+
+            if (_editingScheduleId == child.Id)
+            {
+                // Edit mode — row 1: Time, NL Title, EN Title
+                builder.OpenElement(4, "input");
+                builder.AddAttribute(5, "type", "text");
+                builder.AddAttribute(6, "class", "form-input form-input-sm");
+                builder.AddAttribute(7, "style", "width: 70px;");
+                builder.AddAttribute(8, "value", _editScheduleTime);
+                builder.AddAttribute(9, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _editScheduleTime = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(10, "input");
+                builder.AddAttribute(11, "type", "text");
+                builder.AddAttribute(12, "class", "form-input form-input-sm");
+                builder.AddAttribute(13, "style", "flex: 1; min-width: 80px;");
+                builder.AddAttribute(14, "value", _editScheduleTitle);
+                builder.AddAttribute(15, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _editScheduleTitle = e.Value?.ToString() ?? ""));
+                builder.AddAttribute(150, "placeholder", "🇳🇱 Titel");
+                builder.CloseElement();
+
+                builder.OpenElement(151, "input");
+                builder.AddAttribute(152, "type", "text");
+                builder.AddAttribute(153, "class", "form-input form-input-sm");
+                builder.AddAttribute(154, "style", "flex: 1; min-width: 80px; border-left: 3px solid var(--color-sage-light);");
+                builder.AddAttribute(155, "value", _editScheduleTitleEn);
+                builder.AddAttribute(156, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _editScheduleTitleEn = e.Value?.ToString() ?? ""));
+                builder.AddAttribute(157, "placeholder", "🇬🇧 Title");
+                builder.CloseElement();
+
+                builder.OpenElement(16, "input");
+                builder.AddAttribute(17, "type", "text");
+                builder.AddAttribute(18, "class", "form-input form-input-sm");
+                builder.AddAttribute(19, "style", "flex: 1; min-width: 80px;");
+                builder.AddAttribute(20, "value", _editScheduleDesc);
+                builder.AddAttribute(21, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _editScheduleDesc = e.Value?.ToString() ?? ""));
+                builder.AddAttribute(200, "placeholder", "🇳🇱 Beschrijving");
+                builder.CloseElement();
+
+                builder.OpenElement(201, "input");
+                builder.AddAttribute(202, "type", "text");
+                builder.AddAttribute(203, "class", "form-input form-input-sm");
+                builder.AddAttribute(204, "style", "flex: 1; min-width: 80px; border-left: 3px solid var(--color-sage-light);");
+                builder.AddAttribute(205, "value", _editScheduleDescEn);
+                builder.AddAttribute(206, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _editScheduleDescEn = e.Value?.ToString() ?? ""));
+                builder.AddAttribute(207, "placeholder", "🇬🇧 Description");
+                builder.CloseElement();
+
+                builder.OpenElement(22, "button");
+                builder.AddAttribute(23, "class", "btn-icon btn-save");
+                builder.AddAttribute(24, "onclick", EventCallback.Factory.Create(this, SaveScheduleEdit));
+                builder.AddContent(25, "✓");
+                builder.CloseElement();
+
+                builder.OpenElement(26, "button");
+                builder.AddAttribute(27, "class", "btn-icon btn-cancel");
+                builder.AddAttribute(28, "onclick", EventCallback.Factory.Create(this, CancelScheduleEdit));
+                builder.AddContent(29, "✗");
+                builder.CloseElement();
+            }
+            else
+            {
+                // Move buttons
+                builder.OpenElement(30, "div");
+                builder.AddAttribute(31, "style", "display: flex; flex-direction: column; gap: 1px;");
+
+                builder.OpenElement(32, "button");
+                builder.AddAttribute(33, "class", "btn-icon");
+                builder.AddAttribute(34, "style", "font-size: 0.6rem; padding: 1px 4px;");
+                builder.AddAttribute(35, "onclick", EventCallback.Factory.Create(this, () => MoveScheduleItem(capturedChild, -1)));
+                if (childIdx == 0) builder.AddAttribute(36, "disabled", true);
+                builder.AddContent(37, "▲");
+                builder.CloseElement();
+
+                builder.OpenElement(38, "button");
+                builder.AddAttribute(39, "class", "btn-icon");
+                builder.AddAttribute(40, "style", "font-size: 0.6rem; padding: 1px 4px;");
+                builder.AddAttribute(41, "onclick", EventCallback.Factory.Create(this, () => MoveScheduleItem(capturedChild, 1)));
+                if (childIdx == children.Count - 1) builder.AddAttribute(42, "disabled", true);
+                builder.AddContent(43, "▼");
+                builder.CloseElement();
+
+                builder.CloseElement(); // move buttons div
+
+                // Time
+                builder.OpenElement(44, "span");
+                builder.AddAttribute(45, "style", "color: var(--color-terracotta); font-family: var(--font-sans); font-size: 0.85rem; min-width: 45px;");
+                builder.AddContent(46, child.Time);
+                builder.CloseElement();
+
+                // Title
+                builder.OpenElement(47, "span");
+                builder.AddAttribute(48, "style", "font-weight: 500;");
+                builder.AddContent(49, child.Title);
+                builder.CloseElement();
+
+                // English title hint
+                if (!string.IsNullOrEmpty(child.TitleEn))
+                {
+                    builder.OpenElement(470, "span");
+                    builder.AddAttribute(471, "style", "color: var(--color-sage-dark); font-size: 0.8rem; font-style: italic;");
+                    builder.AddContent(472, $"🇬🇧 {child.TitleEn}");
+                    builder.CloseElement();
+                }
+
+                // Description
+                if (!string.IsNullOrEmpty(child.Description))
+                {
+                    builder.OpenElement(50, "span");
+                    builder.AddAttribute(51, "style", "color: var(--color-text-light); font-size: 0.85rem;");
+                    builder.AddContent(52, $"— {child.Description}");
+                    builder.CloseElement();
+                }
+
+                // Action buttons
+                builder.OpenElement(53, "div");
+                builder.AddAttribute(54, "style", "margin-left: auto; display: flex; gap: 0.2rem;");
+
+                builder.OpenElement(55, "button");
+                builder.AddAttribute(56, "class", "btn-icon btn-add-sub");
+                builder.AddAttribute(57, "onclick", EventCallback.Factory.Create(this, () => StartAddSubItem(capturedChild.Id)));
+                builder.AddAttribute(58, "title", "Sub-item toevoegen");
+                builder.AddAttribute(59, "style", "font-size: 1.1rem; color: var(--color-sage-dark); border: 1px solid var(--color-sage-light); border-radius: 6px; padding: 2px 7px;");
+                builder.AddContent(60, "+");
+                builder.CloseElement();
+
+                builder.OpenElement(61, "button");
+                builder.AddAttribute(62, "class", "btn-icon btn-edit");
+                builder.AddAttribute(63, "onclick", EventCallback.Factory.Create(this, () => StartEditSchedule(capturedChild)));
+                builder.AddContent(64, "✎");
+                builder.CloseElement();
+
+                builder.OpenElement(65, "button");
+                builder.AddAttribute(66, "class", "btn-icon btn-delete");
+                builder.AddAttribute(67, "onclick", EventCallback.Factory.Create(this, () => DeleteScheduleItem(capturedChild.Id)));
+                builder.AddContent(68, "🗑");
+                builder.CloseElement();
+
+                builder.CloseElement(); // actions div
+            }
+
+            builder.CloseElement(); // child row div
+
+            // Recurse for grandchildren
+            var grandFragment = AdminChildrenFragment(child);
+            grandFragment(builder);
+
+            // Inline add sub-item form for this child
+            if (_addingSubItemParentId == child.Id)
+            {
+                builder.OpenElement(70, "div");
+                builder.AddAttribute(71, "style", "margin: 0.4rem 0 0.4rem 1.2rem; padding: 0.6rem 0.8rem; border: 2px dashed var(--color-sage-light); border-radius: 8px; background: rgba(181, 196, 168, 0.10);");
+
+                builder.OpenElement(72, "div");
+                builder.AddAttribute(73, "style", "display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: end;");
+
+                builder.OpenElement(74, "input");
+                builder.AddAttribute(75, "type", "text");
+                builder.AddAttribute(76, "class", "form-input form-input-sm");
+                builder.AddAttribute(77, "style", "width: 70px;");
+                builder.AddAttribute(78, "placeholder", "Tijd");
+                builder.AddAttribute(79, "value", _addSubTime);
+                builder.AddAttribute(80, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _addSubTime = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(81, "input");
+                builder.AddAttribute(82, "type", "text");
+                builder.AddAttribute(83, "class", "form-input form-input-sm");
+                builder.AddAttribute(84, "style", "flex: 1; min-width: 80px;");
+                builder.AddAttribute(85, "placeholder", "🇳🇱 Titel");
+                builder.AddAttribute(86, "value", _addSubTitle);
+                builder.AddAttribute(87, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _addSubTitle = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(810, "input");
+                builder.AddAttribute(811, "type", "text");
+                builder.AddAttribute(812, "class", "form-input form-input-sm");
+                builder.AddAttribute(813, "style", "flex: 1; min-width: 80px; border-left: 3px solid var(--color-sage-light);");
+                builder.AddAttribute(814, "placeholder", "🇬🇧 Title");
+                builder.AddAttribute(815, "value", _addSubTitleEn);
+                builder.AddAttribute(816, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _addSubTitleEn = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(88, "input");
+                builder.AddAttribute(89, "type", "text");
+                builder.AddAttribute(90, "class", "form-input form-input-sm");
+                builder.AddAttribute(91, "style", "flex: 1; min-width: 80px;");
+                builder.AddAttribute(92, "placeholder", "🇳🇱 Beschrijving");
+                builder.AddAttribute(93, "value", _addSubDesc);
+                builder.AddAttribute(94, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _addSubDesc = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(880, "input");
+                builder.AddAttribute(881, "type", "text");
+                builder.AddAttribute(882, "class", "form-input form-input-sm");
+                builder.AddAttribute(883, "style", "flex: 1; min-width: 80px; border-left: 3px solid var(--color-sage-light);");
+                builder.AddAttribute(884, "placeholder", "🇬🇧 Description");
+                builder.AddAttribute(885, "value", _addSubDescEn);
+                builder.AddAttribute(886, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _addSubDescEn = e.Value?.ToString() ?? ""));
+                builder.CloseElement();
+
+                builder.OpenElement(95, "button");
+                builder.AddAttribute(96, "class", "btn-icon btn-save");
+                builder.AddAttribute(97, "onclick", EventCallback.Factory.Create(this, SaveNewSubItem));
+                builder.AddAttribute(98, "style", "height: 28px;");
+                builder.AddContent(99, "✓");
+                builder.CloseElement();
+
+                builder.OpenElement(100, "button");
+                builder.AddAttribute(101, "class", "btn-icon btn-cancel");
+                builder.AddAttribute(102, "onclick", EventCallback.Factory.Create(this, CancelAddSubItem));
+                builder.AddAttribute(103, "style", "height: 28px;");
+                builder.AddContent(104, "✗");
+                builder.CloseElement();
+
+                builder.CloseElement(); // flex row
+                builder.CloseElement(); // form container
+            }
+        }
+
+        builder.CloseElement(); // container div
+    };
+
+    // ========================
+    //   CONTACT INFO MANAGEMENT
+    // ========================
+    private async Task SwitchToContacts()
+    {
+        _activeTab = "contacts";
+        await LoadContactInfos();
+    }
+
+    private async Task LoadContactInfos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _contactInfos = await db.ContactInfos.OrderBy(c => c.SortOrder).ToListAsync();
+    }
+
+    private async Task AddContact()
+    {
+        _contactMessage = "";
+        if (string.IsNullOrWhiteSpace(_newContactName) || string.IsNullOrWhiteSpace(_newContactPhone) || string.IsNullOrWhiteSpace(_newContactEmail))
+        {
+            _contactMessage = "Vul alle velden in.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = await db.ContactInfos.CountAsync() + 1;
+            db.ContactInfos.Add(new ContactInfo
+            {
+                Name = _newContactName.Trim(),
+                Phone = _newContactPhone.Trim(),
+                Email = _newContactEmail.Trim(),
+                SortOrder = nextOrder
+            });
+            await db.SaveChangesAsync();
+            _newContactName = "";
+            _newContactPhone = "";
+            _newContactEmail = "";
+            _contactMessage = "Contactpersoon toegevoegd!";
+            await LoadContactInfos();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditContact(ContactInfo contact)
+    {
+        _editingContactId = contact.Id;
+        _editContactName = contact.Name;
+        _editContactPhone = contact.Phone;
+        _editContactEmail = contact.Email;
+    }
+
+    private void CancelContactEdit()
+    {
+        _editingContactId = null;
+    }
+
+    private async Task SaveContactEdit()
+    {
+        if (_editingContactId is null) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var contact = await db.ContactInfos.FindAsync(_editingContactId.Value);
+            if (contact is not null)
+            {
+                contact.Name = _editContactName.Trim();
+                contact.Phone = _editContactPhone.Trim();
+                contact.Email = _editContactEmail.Trim();
+                await db.SaveChangesAsync();
+            }
+            _editingContactId = null;
+            await LoadContactInfos();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteContact(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je dit contactpersoon wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var contact = await db.ContactInfos.FindAsync(id);
+            if (contact is not null)
+            {
+                db.ContactInfos.Remove(contact);
+                await db.SaveChangesAsync();
+            }
+            await LoadContactInfos();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   LOCATION MANAGEMENT
+    // ========================
+    private async Task SwitchToLocations()
+    {
+        _activeTab = "locations";
+        await LoadLocations();
+    }
+
+    private async Task LoadLocations()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _locations = await db.WeddingLocations.OrderBy(l => l.SortOrder).ToListAsync();
+    }
+
+    private async Task AddLocation()
+    {
+        _locationMessage = "";
+        if (string.IsNullOrWhiteSpace(_newLocationTitle) || string.IsNullOrWhiteSpace(_newLocationIcon)
+            || string.IsNullOrWhiteSpace(_newLocationVenue) || string.IsNullOrWhiteSpace(_newLocationAddress1))
+        {
+            _locationMessage = "Vul minimaal titel, icoon, naam en adresregel 1 in.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = await db.WeddingLocations.CountAsync() + 1;
+            db.WeddingLocations.Add(new WeddingLocation
+            {
+                Title = _newLocationTitle.Trim(),
+                TitleEn = string.IsNullOrWhiteSpace(_newLocationTitleEn) ? null : _newLocationTitleEn.Trim(),
+                Icon = _newLocationIcon.Trim(),
+                VenueName = _newLocationVenue.Trim(),
+                AddressLine1 = _newLocationAddress1.Trim(),
+                AddressLine2 = string.IsNullOrWhiteSpace(_newLocationAddress2) ? null : _newLocationAddress2.Trim(),
+                Phone = string.IsNullOrWhiteSpace(_newLocationPhone) ? null : _newLocationPhone.Trim(),
+                SortOrder = nextOrder
+            });
+            await db.SaveChangesAsync();
+            _newLocationTitle = "";
+            _newLocationTitleEn = "";
+            _newLocationIcon = "";
+            _newLocationVenue = "";
+            _newLocationAddress1 = "";
+            _newLocationAddress2 = "";
+            _newLocationPhone = "";
+            _locationMessage = "Locatie toegevoegd!";
+            await LoadLocations();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditLocation(WeddingLocation loc)
+    {
+        _editingLocationId = loc.Id;
+        _editLocationTitle = loc.Title;
+        _editLocationTitleEn = loc.TitleEn ?? "";
+        _editLocationIcon = loc.Icon;
+        _editLocationVenue = loc.VenueName;
+        _editLocationAddress1 = loc.AddressLine1;
+        _editLocationAddress2 = loc.AddressLine2 ?? "";
+        _editLocationPhone = loc.Phone ?? "";
+    }
+
+    private void CancelLocationEdit()
+    {
+        _editingLocationId = null;
+    }
+
+    private async Task SaveLocationEdit()
+    {
+        if (_editingLocationId is null) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var loc = await db.WeddingLocations.FindAsync(_editingLocationId.Value);
+            if (loc is not null)
+            {
+                loc.Title = _editLocationTitle.Trim();
+                loc.TitleEn = string.IsNullOrWhiteSpace(_editLocationTitleEn) ? null : _editLocationTitleEn.Trim();
+                loc.Icon = _editLocationIcon.Trim();
+                loc.VenueName = _editLocationVenue.Trim();
+                loc.AddressLine1 = _editLocationAddress1.Trim();
+                loc.AddressLine2 = string.IsNullOrWhiteSpace(_editLocationAddress2) ? null : _editLocationAddress2.Trim();
+                loc.Phone = string.IsNullOrWhiteSpace(_editLocationPhone) ? null : _editLocationPhone.Trim();
+                await db.SaveChangesAsync();
+            }
+            _editingLocationId = null;
+            await LoadLocations();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteLocation(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze locatie wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var loc = await db.WeddingLocations.FindAsync(id);
+            if (loc is not null)
+            {
+                db.WeddingLocations.Remove(loc);
+                await db.SaveChangesAsync();
+            }
+            await LoadLocations();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   DRESS CODE MANAGEMENT
+    // ========================
+    private async Task SwitchToDressCode()
+    {
+        _activeTab = "dresscode";
+        await LoadDressColors();
+    }
+
+    private async Task LoadDressColors()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _dressColors = await db.DressCodeColors.OrderBy(c => c.SortOrder).ToListAsync();
+    }
+
+    private async Task AddDressColor()
+    {
+        _dressColorMessage = "";
+        if (string.IsNullOrWhiteSpace(_newDressColorHex) || string.IsNullOrWhiteSpace(_newDressColorNameNl))
+        {
+            _dressColorMessage = "Vul minimaal een kleur en een Nederlandse naam in.";
+            return;
+        }
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = (await db.DressCodeColors.CountAsync()) + 1;
+            db.DressCodeColors.Add(new DressCodeColor
+            {
+                Hex = _newDressColorHex.Trim(),
+                NameNl = _newDressColorNameNl.Trim(),
+                NameEn = string.IsNullOrWhiteSpace(_newDressColorNameEn) ? null : _newDressColorNameEn.Trim(),
+                SortOrder = nextOrder
+            });
+            await db.SaveChangesAsync();
+            _newDressColorNameNl = "";
+            _newDressColorNameEn = "";
+            _dressColorMessage = "Kleur toegevoegd!";
+            await LoadDressColors();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditDressColor(DressCodeColor color)
+    {
+        _editingDressColorId = color.Id;
+        _editDressColorHex = color.Hex;
+        _editDressColorNameNl = color.NameNl;
+        _editDressColorNameEn = color.NameEn ?? "";
+    }
+
+    private void CancelDressColorEdit() => _editingDressColorId = null;
+
+    private async Task SaveDressColorEdit()
+    {
+        if (_editingDressColorId is null) return;
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var color = await db.DressCodeColors.FindAsync(_editingDressColorId.Value);
+            if (color is not null)
+            {
+                color.Hex = _editDressColorHex.Trim();
+                color.NameNl = _editDressColorNameNl.Trim();
+                color.NameEn = string.IsNullOrWhiteSpace(_editDressColorNameEn) ? null : _editDressColorNameEn.Trim();
+                await db.SaveChangesAsync();
+            }
+            _editingDressColorId = null;
+            await LoadDressColors();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteDressColor(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze kleur wilt verwijderen?");
+        if (!confirmed) return;
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var color = await db.DressCodeColors.FindAsync(id);
+            if (color is not null)
+            {
+                db.DressCodeColors.Remove(color);
+                await db.SaveChangesAsync();
+            }
+            await LoadDressColors();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   IMAGE MANAGEMENT
+    // ========================
+    private async Task SwitchToImages()
+    {
+        _activeTab = "images";
+        await LoadSiteImages();
+    }
+
+    private async Task SwitchToVisitors()
+    {
+        _activeTab = "visitors";
+        await LoadVisitorLog();
+    }
+
+    private async Task LoadVisitorLog()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _visitorLogDays = await db.VisitorLogs
+            .GroupBy(v => v.VisitedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Date)
+            .ToListAsync()
+            .ContinueWith(t => t.Result
+                .Select(g => (Date: DateOnly.FromDateTime(g.Date), g.Count))
+                .ToList());
+    }
+
+    private async Task LoadSiteImages()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _siteImages = await db.SiteImages
+            .Select(i => new SiteImage { Id = i.Id, Name = i.Name, Slot = i.Slot, FileName = i.FileName, ContentType = i.ContentType, Data = Array.Empty<byte>() })
+            .ToListAsync();
+    }
+
+    private async Task OnImageSelected(string slot, string slotName, InputFileChangeEventArgs e)
+    {
+        _imageMessage = "";
+        _imageError = "";
+
+        var file = e.File;
+        if (file is null) return;
+
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/jpg" };
+        if (!allowedTypes.Contains(file.ContentType.ToLower()))
+        {
+            _imageError = "Alleen JPG, JPEG en PNG bestanden zijn toegestaan.";
+            return;
+        }
+
+        const long maxSize = 5 * 1024 * 1024; // 5 MB
+        if (file.Size > maxSize)
+        {
+            _imageError = "Bestand is te groot. Maximum is 5 MB.";
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            using var stream = file.OpenReadStream(maxSize);
+            using var ms = new System.IO.MemoryStream();
+            await stream.CopyToAsync(ms);
+            var data = ms.ToArray();
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existing = await db.SiteImages.FirstOrDefaultAsync(i => i.Slot == slot);
+
+            if (existing is not null)
+            {
+                existing.Name = slotName;
+                existing.FileName = file.Name;
+                existing.ContentType = file.ContentType;
+                existing.Data = data;
+            }
+            else
+            {
+                db.SiteImages.Add(new SiteImage
+                {
+                    Name = slotName,
+                    Slot = slot,
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Data = data
+                });
+            }
+
+            await db.SaveChangesAsync();
+            _imageMessage = $"Afbeelding '{file.Name}' geüpload voor {slotName}!";
+            await LoadSiteImages();
+        }
+        catch (Exception ex)
+        {
+            _imageError = $"Fout bij uploaden: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteImage(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze afbeelding wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var image = await db.SiteImages.FindAsync(id);
+            if (image is not null)
+            {
+                db.SiteImages.Remove(image);
+                await db.SaveChangesAsync();
+            }
+            _imageMessage = "Afbeelding verwijderd.";
+            await LoadSiteImages();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ========================
+    //   PHOTO SESSION MANAGEMENT
+    // ========================
+    private async Task SwitchToPhotos()
+    {
+        _activeTab = "photos";
+        await LoadPhotoSessions();
+    }
+
+    private async Task LoadPhotoSessions()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _photoSessions = await db.PhotoSessions
+            .Include(s => s.Guests)
+            .ThenInclude(sg => sg.Guest)
+            .ThenInclude(g => g.Attendance)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+    }
+
+    private async Task AddPhotoSession()
+    {
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nextOrder = await db.PhotoSessions.CountAsync() + 1;
+            db.PhotoSessions.Add(new PhotoSession
+            {
+                Name = $"Foto {nextOrder}",
+                SortOrder = nextOrder,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnPhotoSessionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddPhotoSession();
+    }
+
+    private async Task DeletePhotoSession(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze foto sessie wilt verwijderen?");
+        if (!confirmed) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var session = await db.PhotoSessions.FindAsync(id);
+            if (session is not null)
+            {
+                db.PhotoSessions.Remove(session);
+                await db.SaveChangesAsync();
+            }
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void StartEditPhotoSession(PhotoSession session)
+    {
+        _editingPhotoSessionId = session.Id;
+        _editPhotoSessionName = session.Name;
+    }
+
+    private void CancelPhotoSessionEdit()
+    {
+        _editingPhotoSessionId = null;
+    }
+
+    private async Task OnEditPhotoSessionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SavePhotoSessionEdit();
+        else if (e.Key == "Escape") CancelPhotoSessionEdit();
+    }
+
+    private async Task SavePhotoSessionEdit()
+    {
+        if (_editingPhotoSessionId is null) return;
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var session = await db.PhotoSessions.FindAsync(_editingPhotoSessionId.Value);
+            if (session is not null)
+            {
+                session.Name = _editPhotoSessionName.Trim();
+                await db.SaveChangesAsync();
+            }
+            _editingPhotoSessionId = null;
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task AddGuestToSession(int sessionId, int guestId)
+    {
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var exists = await db.PhotoSessionGuests.AnyAsync(sg => sg.PhotoSessionId == sessionId && sg.GuestId == guestId);
+            if (!exists)
+            {
+                db.PhotoSessionGuests.Add(new PhotoSessionGuest
+                {
+                    PhotoSessionId = sessionId,
+                    GuestId = guestId
+                });
+                await db.SaveChangesAsync();
+            }
+            _photoGuestSearch = "";
+            // Keep _photoSearchSessionId so the input stays active for the next guest
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RemoveGuestFromSession(int sessionId, int guestId)
+    {
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var sg = await db.PhotoSessionGuests.FirstOrDefaultAsync(x => x.PhotoSessionId == sessionId && x.GuestId == guestId);
+            if (sg is not null)
+            {
+                db.PhotoSessionGuests.Remove(sg);
+                await db.SaveChangesAsync();
+            }
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnPhotoDragStart(PhotoSession session)
+    {
+        _dragPhotoSessionId = session.Id;
+    }
+
+    private async Task OnPhotoDrop(PhotoSession target)
+    {
+        if (_dragPhotoSessionId is null || _dragPhotoSessionId == target.Id)
+        {
+            _dragPhotoSessionId = null;
+            return;
+        }
+
+        _isBusy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var sessions = await db.PhotoSessions.OrderBy(s => s.SortOrder).ToListAsync();
+            var draggedIdx = sessions.FindIndex(s => s.Id == _dragPhotoSessionId);
+            var targetIdx = sessions.FindIndex(s => s.Id == target.Id);
+
+            if (draggedIdx >= 0 && targetIdx >= 0)
+            {
+                var dragged = sessions[draggedIdx];
+                sessions.RemoveAt(draggedIdx);
+                sessions.Insert(targetIdx, dragged);
+
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    sessions[i].SortOrder = i + 1;
+                }
+                await db.SaveChangesAsync();
+            }
+
+            _dragPhotoSessionId = null;
+            await LoadPhotoSessions();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private List<Guest> GetFilteredPhotoGuests()
+    {
+        if (_photoOnlyAttending)
+        {
+            return _guests.Where(g => g.Attendance is not null &&
+                (g.Attendance.AttendingCeremony || g.Attendance.AttendingDinner || g.Attendance.AttendingEvening)).ToList();
+        }
+        return _guests;
+    }
+
+    private void OnPhotoGuestSearchInput(ChangeEventArgs e)
+    {
+        _photoGuestSearch = e.Value?.ToString() ?? "";
+    }
+
+    private async Task OnPhotoGuestSearchKeyDown(KeyboardEventArgs e, PhotoSession session)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(_photoGuestSearch)) return;
+
+        var existingGuestIds = session.Guests.Select(g => g.GuestId).ToHashSet();
+        var matches = GetFilteredPhotoGuests()
+            .Where(g => !existingGuestIds.Contains(g.Id))
+            .Where(g => g.FullName.Contains(_photoGuestSearch, StringComparison.OrdinalIgnoreCase))
+            .Take(2).ToList();
+
+        if (matches.Count == 1)
+        {
+            await AddGuestToSession(session.Id, matches[0].Id);
+        }
+    }
+
+    private sealed record AdminSession(int UserId, DateTime ExpiresUtc);
+}
+
