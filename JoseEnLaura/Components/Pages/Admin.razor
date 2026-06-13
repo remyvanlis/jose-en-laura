@@ -1755,7 +1755,7 @@
     private async Task DeleteGuest(int id)
     {
         var guestName = _guests.FirstOrDefault(g => g.Id == id)?.FullName ?? "deze gast";
-        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Weet je zeker dat je '{guestName}' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.");
+        var confirmed = await JS.InvokeAsync<string>("confirm", $"Weet je zeker dat je '{guestName}' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.") == "true";
         
         if (!confirmed) return;
 
@@ -1916,7 +1916,7 @@
         if (_rsvpSelectedGuestId <= 0) return;
 
         var guestName = _guests.FirstOrDefault(g => g.Id == _rsvpSelectedGuestId)?.FullName ?? "deze gast";
-        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Weet je zeker dat je de RSVP van '{guestName}' wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", $"Weet je zeker dat je de RSVP van '{guestName}' wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
@@ -2065,7 +2065,7 @@
 
     private async Task DeleteFaq(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze FAQ wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je deze FAQ wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
@@ -2333,7 +2333,7 @@
 
     private async Task DeleteScheduleItem(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je dit item (en eventuele sub-items) wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je dit item (en eventuele sub-items) wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
@@ -2867,7 +2867,7 @@
 
     private async Task DeleteLocation(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze locatie wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je deze locatie wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
@@ -2974,7 +2974,7 @@
 
     private async Task DeleteDressColor(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze kleur wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je deze kleur wilt verwijderen?") == "true";
         if (!confirmed) return;
         _isBusy = true;
         StateHasChanged();
@@ -3100,7 +3100,7 @@
 
     private async Task DeleteImage(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze afbeelding wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je deze afbeelding wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
@@ -3173,7 +3173,7 @@
 
     private async Task DeletePhotoSession(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je deze foto sessie wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je deze foto sessie wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;
