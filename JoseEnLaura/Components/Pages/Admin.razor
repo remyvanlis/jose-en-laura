@@ -358,7 +358,7 @@
 
                     <div class="form-group" style="position: relative;">
                         <label>Zoek een gast</label>
-                        <input type="text" class="form-input" @bind="_rsvpGuestSearch" @bind:event="oninput" @bind:after="OnRsvpSearchChanged" @onfocus="() => _showRsvpSuggestions = true" placeholder="&#128269; Typ een naam..." autocomplete="off" />
+                        <input type="text" class="form-input" @bind="_rsvpGuestSearch" @bind:event="oninput" @bind:after="OnRsvpSearchChanged" @onfocus="() => _showRsvpSuggestions = true" placeholder="Typ een naam..." autocomplete="off" />
                         @if (_showRsvpSuggestions && !string.IsNullOrWhiteSpace(_rsvpGuestSearch))
                         {
                             var filtered = _guests.Where(g => g.FullName.Contains(_rsvpGuestSearch, StringComparison.OrdinalIgnoreCase)).Take(10).ToList();
@@ -2737,7 +2737,7 @@
 
     private async Task DeleteContact(int id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", "Weet je zeker dat je dit contactpersoon wilt verwijderen?");
+        var confirmed = await JS.InvokeAsync<string>("confirm", "Weet je zeker dat je dit contactpersoon wilt verwijderen?") == "true";
         if (!confirmed) return;
 
         _isBusy = true;

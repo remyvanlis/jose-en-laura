@@ -8,7 +8,7 @@
         @onclick="Toggle"
         @onclick:stopPropagation
         title="@(isDone ? "Markeer als niet klaar" : "Markeer als klaar")">
-    @(isDone ? "?" : "?")
+    @(isDone ? "✅" : "☐")
 </button>
 
 @code {

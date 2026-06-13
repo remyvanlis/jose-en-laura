@@ -73,9 +73,9 @@ public static class PlanningHelpers
     }
     public static string GetBlockTypeIcon(PlanningBlock block) => block.Type switch
     {
-        BlockType.Checkbox => block.IsChecked ? "?" : "?",
+        BlockType.Checkbox => block.IsChecked ? "✅" : "☐",
         BlockType.Heading => "H",
-        BlockType.Question => "?",
+        BlockType.Question => "❓",
         BlockType.Important => "!",
         _ => "📝"
     };
@@ -109,10 +109,10 @@ public static class PlanningHelpers
 
     public static string GetItemStatusIcon(BlockItemStatus status) => status switch
     {
-        BlockItemStatus.NotStarted => "?",
-        BlockItemStatus.InProgress => "??",
-        BlockItemStatus.Done => "?",
-        BlockItemStatus.Blocked => "??",
+        BlockItemStatus.NotStarted => "⭕",
+        BlockItemStatus.InProgress => "⏳",
+        BlockItemStatus.Done => "✅",
+        BlockItemStatus.Blocked => "🚫",
         _ => ""
     };
 
@@ -135,9 +135,9 @@ public static class PlanningHelpers
 
     public static string GetPriorityIcon(BlockPriority priority) => priority switch
     {
-        BlockPriority.Low => "??",
-        BlockPriority.Medium => "??",
-        BlockPriority.High => "??",
+        BlockPriority.Low => "🔵",
+        BlockPriority.Medium => "🟡",
+        BlockPriority.High => "🔴",
         _ => ""
     };
 
@@ -167,16 +167,16 @@ public static class PlanningHelpers
 
     public static string GetAuditIcon(string action) => action switch
     {
-        "created" => "??",
-        "edited" => "??",
-        "status_changed" => "??",
-        "assigned" => "??",
-        "deadline_set" => "??",
-        "deadline_removed" => "??",
-        "restored" => "??",
-        "attachment_added" => "??",
-        "comment_added" => "??",
-        _ => "??"
+        "created" => "📝",
+        "edited" => "✏️",
+        "status_changed" => "🔄",
+        "assigned" => "👤",
+        "deadline_set" => "📅",
+        "deadline_removed" => "🗓️",
+        "restored" => "↩️",
+        "attachment_added" => "📎",
+        "comment_added" => "💬",
+        _ => "❓"
     };
 
     public static string GetAuditActionText(string action) => action switch
@@ -199,4 +199,3 @@ public static class PlanningHelpers
         return text.Length <= maxLength ? text : text[..maxLength] + "…";
     }
 }
-

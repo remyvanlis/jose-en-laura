@@ -24,7 +24,7 @@
     {
         <div class="planning-login-wrap">
             <div class="planning-login-card">
-                <h1>?? Planning</h1>
+                <h1>📋 Planning</h1>
                 <p>Laden...</p>
             </div>
         </div>
@@ -39,7 +39,7 @@
             <!-- Mobile hamburger button -->
             @if (_sidebarCollapsed)
             {
-                <button class="mobile-menu-btn" @onclick="() => _sidebarCollapsed = false">?</button>
+                <button class="mobile-menu-btn" @onclick="() => _sidebarCollapsed = false">☰</button>
             }
 
             <!-- Mobile sidebar backdrop -->
@@ -101,7 +101,7 @@
                         {
                             <div class="pinned-info-card" @onclick="() => SelectNote(pinnedNote.Id)">
                                 <div class="pinned-info-header">
-                                    <span>?? Algemene info</span>
+                                    <span>📌 Algemene info</span>
                                     <span class="pinned-info-title">@pinnedNote.Title</span>
                                 </div>
                                 <div class="pinned-info-content">
@@ -112,7 +112,7 @@
                                             <p class="pinned-info-line @(block.Type == BlockType.Heading ? "pinned-heading" : "")">
                                                 @if (block.Type == BlockType.Checkbox)
                                                 {
-                                                    <span>@(block.IsChecked ? "?" : "?")</span>
+                                                    <span>@(block.IsChecked ? "☑" : "☐")</span>
                                                 }
                                                 @block.Content
                                             </p>
@@ -167,8 +167,8 @@
 
         <!-- View mode switch (fixed bottom-right) -->
         <div class="view-switch">
-            <button class="view-btn @(_activeView == "overview" && _selectedNote is null ? "active" : "")" @onclick="SwitchToOverview">?? Overzicht</button>
-            <button class="view-btn @(_activeView == "timeline" ? "active" : "")" @onclick='() => { _activeView = "timeline"; }'>?? Tijdlijn</button>
+            <button class="view-btn @(_activeView == "overview" && _selectedNote is null ? "active" : "")" @onclick="SwitchToOverview">📋 Overzicht</button>
+            <button class="view-btn @(_activeView == "timeline" ? "active" : "")" @onclick='() => { _activeView = "timeline"; }'>📅 Tijdlijn</button>
         </div>
     }
 </div>
@@ -439,7 +439,7 @@
     {
         _editingCategory = cat;
         _editCategoryName = cat.Name;
-        _editCategoryIcon = cat.Icon ?? "??";
+        _editCategoryIcon = cat.Icon ?? "📁";
         _editCategoryColor = cat.Color ?? "#6c757d";
     }
 

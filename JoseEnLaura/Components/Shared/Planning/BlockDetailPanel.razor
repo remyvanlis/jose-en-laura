@@ -4,30 +4,30 @@
     <div class="detail-field">
         <label>Type</label>
         <select class="p-input p-input-xs" value="@Block.Type" @onchange="OnTypeChange">
-            <option value="Text">?? Tekst</option>
-            <option value="Checkbox">? Taak</option>
+            <option value="Text">📝 Tekst</option>
+            <option value="Checkbox">☑ Taak</option>
             <option value="Heading">H Heading</option>
-            <option value="Question">? Vraag</option>
-            <option value="Important">? Belangrijk</option>
+            <option value="Question">❓ Vraag</option>
+            <option value="Important">❗ Belangrijk</option>
         </select>
     </div>
     <div class="detail-field">
         <label>Status</label>
         <select class="p-input p-input-xs" value="@(Block.ItemStatus?.ToString() ?? "")" @onchange="OnStatusChange">
             <option value="">— Geen —</option>
-            <option value="NotStarted">? Niet gestart</option>
-            <option value="InProgress">?? Bezig</option>
-            <option value="Done">? Klaar</option>
-            <option value="Blocked">?? Geblokkeerd</option>
+            <option value="NotStarted">⭕ Niet gestart</option>
+            <option value="InProgress">⏳ Bezig</option>
+            <option value="Done">✅ Klaar</option>
+            <option value="Blocked">🚫 Geblokkeerd</option>
         </select>
     </div>
     <div class="detail-field">
         <label>Prioriteit</label>
         <select class="p-input p-input-xs" value="@(Block.Priority?.ToString() ?? "")" @onchange="OnPriorityChange">
             <option value="">— Geen —</option>
-            <option value="Low">?? Laag</option>
-            <option value="Medium">?? Normaal</option>
-            <option value="High">?? Hoog</option>
+            <option value="Low">🔵 Laag</option>
+            <option value="Medium">🟡 Normaal</option>
+            <option value="High">🔴 Hoog</option>
         </select>
     </div>
     <div class="detail-field">

@@ -20,9 +20,9 @@
     else if (_currentUser is null)
     {
         <div class="overview-center">
-            <h2>?? Overzicht</h2>
+            <h2>📋 Overzicht</h2>
             <p>Je bent niet ingelogd.</p>
-            <a href="/planning" class="p-btn p-btn-primary">? Ga naar Planning</a>
+            <a href="/planning" class="p-btn p-btn-primary">→ Ga naar Planning</a>
         </div>
     }
     else
@@ -30,28 +30,28 @@
         <div class="overview-container">
             <div class="overview-header">
                 <div class="overview-header-left">
-                    <a href="/planning" class="overview-back">? Planning</a>
-                    <h1>?? Alle items</h1>
+                    <a href="/planning" class="overview-back">← Planning</a>
+                    <h1>📋 Alle items</h1>
                 </div>
                 <div class="overview-stats">
-                    <span class="stat-badge stat-done">? @_items.Count(i => i.IsDone) klaar</span>
-                    <span class="stat-badge stat-progress">?? @_items.Count(i => i.IsInProgress) bezig</span>
-                    <span class="stat-badge stat-todo">? @_items.Count(i => !i.IsDone && !i.IsInProgress) open</span>
+                    <span class="stat-badge stat-done">✅ @_items.Count(i => i.IsDone) klaar</span>
+                    <span class="stat-badge stat-progress">⏳ @_items.Count(i => i.IsInProgress) bezig</span>
+                    <span class="stat-badge stat-todo">⭕ @_items.Count(i => !i.IsDone && !i.IsInProgress) open</span>
                     <span class="stat-badge stat-total">Totaal: @_items.Count</span>
                 </div>
             </div>
 
             <!-- Filters -->
             <div class="overview-filters">
-                <input type="text" class="p-input p-input-sm" placeholder="?? Zoeken..." @bind="_searchQuery" @bind:event="oninput" />
+                <input type="text" class="p-input p-input-sm" placeholder="🔍 Zoeken..." @bind="_searchQuery" @bind:event="oninput" />
                 <select class="p-input p-input-sm" @bind="_filterStatus">
                     <option value="">Alle statussen</option>
-                    <option value="done">? Klaar</option>
-                    <option value="inprogress">?? Bezig</option>
-                    <option value="open">? Open</option>
-                    <option value="overdue">?? Achterstallig</option>
-                    <option value="unread">?? Ongelezen</option>
-                    <option value="mentioned">?? Genoemd</option>
+                    <option value="done">✅ Klaar</option>
+                    <option value="inprogress">⏳ Bezig</option>
+                    <option value="open">⭕ Open</option>
+                    <option value="overdue">⚠️ Achterstallig</option>
+                    <option value="unread">👁 Ongelezen</option>
+                    <option value="mentioned">@("@") Genoemd</option>
                 </select>
                 <select class="p-input p-input-sm" @bind="_filterAssignee">
                     <option value="0">Alle personen</option>
@@ -106,16 +106,16 @@
                                 }
                                 @if (item.Block.Deadline.HasValue)
                                 {
-                                    <span class="deadline-badge @(item.IsOverdue ? "overdue" : "")">?? @item.Block.Deadline.Value.ToString("dd MMM")</span>
+                                    <span class="deadline-badge @(item.IsOverdue ? "overdue" : "")">📅 @item.Block.Deadline.Value.ToString("dd MMM")</span>
                                 }
                                 @if (item.CommentCount > 0)
                                 {
-                                    <span class="comment-badge">??@item.CommentCount</span>
+                                    <span class="comment-badge">💬@item.CommentCount</span>
                                 }
                             </div>
 
                             @* Expand icon *@
-                            <span class="item-chevron">@(isActive ? "?" : "?")</span>
+                            <span class="item-chevron">@(isActive ? "▲" : "▼")</span>
                         </div>
 
                         @* Expanded panel: detail + comments *@
@@ -217,7 +217,7 @@
             Block = b,
             NoteTitle = b.Note?.Title ?? "",
             CategoryName = b.Note?.Category?.Name ?? "",
-            CategoryIcon = b.Note?.Category?.Icon ?? "??",
+            CategoryIcon = b.Note?.Category?.Icon ?? "📁",
             CategoryColor = b.Note?.Category?.Color,
             CategoryId = b.Note?.CategoryId ?? 0,
             AssigneeName = b.AssignedTo?.Name ?? b.Note?.AssignedTo?.Name,
@@ -308,7 +308,7 @@
         public required PlanningBlock Block { get; set; }
         public string NoteTitle { get; set; } = "";
         public string CategoryName { get; set; } = "";
-        public string CategoryIcon { get; set; } = "??";
+        public string CategoryIcon { get; set; } = "📁";
         public string? CategoryColor { get; set; }
         public int CategoryId { get; set; }
         public string? AssigneeName { get; set; }

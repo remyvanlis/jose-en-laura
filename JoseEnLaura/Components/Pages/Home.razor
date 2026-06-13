@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
@@ -102,7 +102,7 @@
                         {
                             <div class="autocomplete-dropdown" @onmousedown:preventDefault>
                                 <div class="autocomplete-hint">
-                                    ?? @(_lang == "en" ? "Tap your name below to select it" : "Tik hieronder op je naam om deze te selecteren")
+                                    👆 @(_lang == "en" ? "Tap your name below to select it" : "Tik hieronder op je naam om deze te selecteren")
                                 </div>
                                 @foreach (var guest in _filteredGuests)
                                 {
@@ -156,11 +156,11 @@
                                     <span class="attendance-status">
                                         @if (_attendingCeremony)
                                         {
-                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                            <span class="status-badge status-yes">✅ @(_lang == "en" ? "Attending" : "Aanwezig")</span>
                                         }
                                         else
                                         {
-                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                            <span class="status-badge status-no">❌ @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
                                         }
                                     </span>
                                 </label>
@@ -175,11 +175,11 @@
                                     <span class="attendance-status">
                                         @if (_attendingDinner)
                                         {
-                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                            <span class="status-badge status-yes">✅ @(_lang == "en" ? "Attending" : "Aanwezig")</span>
                                         }
                                         else
                                         {
-                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                            <span class="status-badge status-no">❌ @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
                                         }
                                     </span>
                                 </label>
@@ -205,11 +205,11 @@
                                     <span class="attendance-status">
                                         @if (_attendingEvening)
                                         {
-                                            <span class="status-badge status-yes">? @(_lang == "en" ? "Attending" : "Aanwezig")</span>
+                                            <span class="status-badge status-yes">✅ @(_lang == "en" ? "Attending" : "Aanwezig")</span>
                                         }
                                         else
                                         {
-                                            <span class="status-badge status-no">? @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
+                                            <span class="status-badge status-no">❌ @(_lang == "en" ? "Not attending" : "Niet aanwezig")</span>
                                         }
                                     </span>
                                 </label>
@@ -593,7 +593,7 @@
         if (diff.TotalDays > 0)
             _countdownText = _lang == "en" ? $"Only {(int)diff.TotalDays} days to go!" : $"Nog {(int)diff.TotalDays} dagen te gaan!";
         else if (diff.TotalDays == 0)
-            _countdownText = _lang == "en" ? "Today is the big day! ??" : "Vandaag is de grote dag! ??";
+            _countdownText = _lang == "en" ? "Today is the big day! 🎉🎊" : "Vandaag is de grote dag! 🎉🎊";
         else
             _countdownText = _lang == "en" ? "What a beautiful day it was!" : "Wat een prachtige dag was het!";
     }
